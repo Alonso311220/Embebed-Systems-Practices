@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <title>Panel de Control LED - Raspberry Pi</title>
+    <meta charset="UTF-8">
+    <style type="text/css">
+        html {
+            width: 100vw;
+            height: 100vh;
+            min-width: 100vw;
+            min-height: 100vh;
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            overflow: hidden;
+        }
+
+        body {
+            width: 800px;
+            height: 100vh;
+            max-width: 800px;
+            min-height: 100vh;
+            padding: 0;
+            margin: 0 auto;
+            box-sizing: border-box;
+            font-family: Arial, sans-serif;
+        }
+
+        body::after {
+            content: "";
+            position: absolute;
+            top: 0; left: 0; bottom: 0; right: 0;
+            z-index: -1;
+            opacity: 0.2;
+            background-image: url('img/raspberry.png'); /* Asegúrate de que la ruta sea correcta */
+            background-repeat: no-repeat;
+            background-attachment: fixed;
+            background-position: center;
+            background-size: contain;
+        }
+
+        header {
+            width: 100%;
+            padding: 0;
+            margin: 0;
+            box-sizing: border-box;
+            text-align: center;
+        }
+
+        h1 {
+            height: 2em;
+            padding: 0.5em 0;
+        }
+
+        /* Sección de Estado */
+        .status-bar {
+            background: rgba(255, 255, 255, 0.8);
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            margin: 10px auto;
+            padding: 10px;
+            display: flex;
+            justify-content: space-around;
+            width: 90%;
+        }
+
+        .container {
+            width: 100%;
+            padding: 0;
+            margin: 0;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: row;
+        }
+
+        .column {
+            flex: 1 0 0;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .numpad {
+            width: 6.5em;
+            height: 12.75em;
+            background-color: #333333;
+            border-radius: 5px;
+            margin: 0.5em auto;
+            padding: 0.2em;
+            font-size: 28pt;
+            display: grid;
+            grid-template-columns: auto auto auto;
+        }
+
+        .numbutton {
+            font-size: inherit;
+            flex: 1 0 0;
+            margin: 0.125em;
+        }
+
+        .ledstrip {
+            display: flex;
+            justify-content: space-evenly;
+            width: 90%;
+            height: 4em;
+            padding: 0;
+            margin: 0.5em auto;
+        }
+
+        .ledbutton {
+            width: 3.5em;
+            height: 3.5em;
+            color: #F00;
+            background-color: #933;
+            border-radius: 50%;
+            margin: 0.25em;
+            padding: 0;
+            border: none;
+            box-shadow: 0px 4px 5px rgba(0, 0, 0, 0.2);
+            cursor: pointer;
+        }
+
+        .ledbutton:hover {
+            background-color: #F33;
+        }
+
+        .widebutton {
+            font-size: 18pt;
+            width: 90%;
+            margin: 0.25em auto;
+            cursor: pointer;
+        }
+
+        .on {
+            color: #0F0 !important;
+            background-color: #3F3 !important;
+            box-shadow: 0px 0px 15px #3F3;
+        }
+    </style>
+</head>
+<body>
+
+    <header><h1>Panel de Control LED</h1></header>
+
+    <section class="status-bar">
+        <span>Modo: <strong id="mode">Cargando...</strong></span>
+        <span>LED activo: <strong id="led">-</strong></span>
+        <span>Animación: <strong id="anim">-</strong></span>
+    </section>
+
+    <section class="container">
+        <article class="column">
+            <header><h2>Secuencia</h2></header>
+            <section class="ledstrip">
+                <button class="ledbutton" onclick="handle(this, 'led', 1)"></button>
+                <button class="ledbutton" onclick="handle(this, 'led', 2)"></button>
+                <button class="ledbutton" onclick="handle(this, 'led', 3)"></button>
+                <button class="ledbutton" onclick="handle(this, 'led', 4)"></button>
+                <button class="ledbutton" onclick="handle(this, 'led', 5)"></button>
+                <button class="ledbutton" onclick="handle(this, 'led', 6)"></button>
+                <button class="ledbutton" onclick="handle(this, 'led', 7)"></button>
+            </section>
+            <button class="widebutton" onclick="handle(this, 'marquee', 'left')">Izquierda</button>
+            <button class="widebutton" onclick="handle(this, 'marquee', 'right')">Derecha</button>
+            <button class="widebutton" onclick="handle(this, 'marquee', 'pingpong')">Ping-Pong</button>
+        </article>
+
+        <article class="column">
+            <header><h2>Display (BCD)</h2></header>
+            <section class="numpad">
+                <button class="numbutton" onclick="handle(this, 'numpad', 7)">7</button>
+                <button class="numbutton" onclick="handle(this, 'numpad', 8)">8</button>
+                <button class="numbutton" onclick="handle(this, 'numpad', 9)">9</button>
+                <button class="numbutton" onclick="handle(this, 'numpad', 4)">4</button>
+                <button class="numbutton" onclick="handle(this, 'numpad', 5)">5</button>
+                <button class="numbutton" onclick="handle(this, 'numpad', 6)">6</button>
+                <button class="numbutton" onclick="handle(this, 'numpad', 1)">1</button>
+                <button class="numbutton" onclick="handle(this, 'numpad', 2)">2</button>
+                <button class="numbutton" onclick="handle(this, 'numpad', 3)">3</button>
+                <div class="numbutton"></div>
+                <button class="numbutton" onclick="handle(this, 'numpad', 0)">0</button>
+                <div class="numbutton"></div>
+            </section>
+        </article>
+    </section>
+
+    <script>
+       function updateState() {
+    fetch('/state')
+        .then(res => res.json())
+        .then(data => {
+            // Actualizamos los textos de la barra de estado
+            document.getElementById("mode").innerText = data.mode;
+            document.getElementById("led").innerText = data.active_led ?? "Ninguno";
+
+            // LÓGICA DE ANIMACIÓN EN PANTALLA
+            // 1. Quitamos el brillo de todos los botones primero
+            const allButtons = document.querySelectorAll('.ledbutton');
+            allButtons.forEach(btn => btn.classList.remove("on"));
+
+            // 2. Si hay un LED encendido en la Raspberry, lo iluminamos en el HTML
+            if (data.current_led) {
+                // Los botones están en un array (0-6), por eso restamos 1
+                const targetButton = allButtons[data.current_led - 1];
+                if (targetButton) {
+                    targetButton.classList.add("on");
+                }
+            }
+        })
+        .catch(err => console.error("Error de conexión:", err));
+}
+
+	// Ejecutamos la actualización cada 100ms para que la animación sea fluida
+	setInterval(updateState, 100);
+
+function handle(sender, action, value) {
+    // Cuando presionas manualmente, forzamos el brillo visual inmediato
+    if (action === 'led') {
+        deactivateAll();
+        sender.classList.add("on");
+    }
+    submit(action, value);
+}
+
+function deactivateAll() {
+    document.querySelectorAll('button').forEach(btn => btn.classList.remove("on"));
+}
+
+function submit(action, value) {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", window.location.origin + "/", true);
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    xhr.send(JSON.stringify({ 'action': action, 'value': value }));
+}
+	
+	function updateState() {
+   		 fetch('/state')
+        	.then(res => res.json())
+        	.then(data => {
+           	 // Actualizar textos
+            	document.getElementById("mode").innerText = data.mode;
+            	document.getElementById("led").innerText = data.active_led ?? "-";
+
+            	// LÓGICA PARA ILUMINAR LOS BOTONES SEGÚN EL LED ACTUAL
+            	deactivateAll(); // Quitamos el brillo de todos
+            	if (data.current_led) {
+                	// Buscamos el botón que corresponde al número de LED actual
+                	// Suponiendo que tus botones de LED son los primeros 7
+                	let buttons = document.querySelectorAll('.ledbutton');
+                	let targetButton = buttons[data.current_led - 1];
+                	if (targetButton) targetButton.classList.add("on");
+            	}
+       	 });
+}
+    </script>
+</body>
+</html>
