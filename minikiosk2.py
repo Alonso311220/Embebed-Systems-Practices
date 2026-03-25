@@ -15,10 +15,8 @@ vlc_flags = [
 ]
 instancia = vlc.Instance(vlc_flags)
 
-# Objetos de reproducción
-reproductor = instancia.media_player_new()
+# Imagenes para reproducción
 lista_reproductor = instancia.media_list_player_new()
-vol_actual = 100
 
 # Variables de control para la USB
 usb_ruta_detectada = None
@@ -30,18 +28,6 @@ btn_ant = Button(2)
 btn_sig = Button(3)
 btn_parar = Button(4)
 btn_pausa = Button(17)
-btn_vol_mas = Button(27)
-btn_vol_menos = Button(22)
-
-def subir_vol():
-    global vol_actual
-    vol_actual = min(100, vol_actual + 5)
-    reproductor.audio_set_volume(vol_actual)
-
-def bajar_vol():
-    global vol_actual
-    vol_actual = max(0, vol_actual - 5)
-    reproductor.audio_set_volume(vol_actual)
 
 # Asignación de acciones
 btn_sig.when_pressed = lista_reproductor.next
@@ -77,31 +63,11 @@ try:
     os.system('clear')
     os.system('tput civis')
 
-    # 1. PUNTO 3: VIDEO DE 20s CON FADE DE VOLUMEN
-    video = instancia.media_new('videos/video.mp4')
-    reproductor.set_media(video)
-    reproductor.play()
-
-    # Lógica de volumen (0.1s x 200 pasos = 20 segundos)
-    for t in range(200):
-        segundo = t / 10.0
-        if segundo <= 5:        # Subida (0 a 5s)
-            v = int((segundo / 5) * 100)
-        elif segundo <= 15:     # Máximo (5 a 15s)
-            v = 100
-        else:                   # Bajada (15 a 20s)
-            v = int(100 - ((segundo - 15) / 5) * 100)
-        
-        reproductor.audio_set_volume(v)
-        time.sleep(0.1)
-
-    reproductor.stop()
-
-    # 2. PUNTO 2: ACTIVAR DETECTOR USB EN SEGUNDO PLANO
+    # 1. ACTIVAR DETECTOR USB EN SEGUNDO PLANO
     escucha_usb = threading.Thread(target=hilo_espera_usb, daemon=True)
     escucha_usb.start()
 
-    # 3. PUNTO 1: BUCLE INFINITO DE IMÁGENES LOCALES
+    # 2.  BUCLE INFINITO DE IMÁGENES LOCALES
     media_list = generar_lista("pictures")
     lista_reproductor.set_media_list(media_list)
     lista_reproductor.set_playback_mode(vlc.PlaybackMode.loop)
@@ -125,3 +91,5 @@ try:
 except KeyboardInterrupt:
     os.system('tput cnorm') # Devolver el cursor
     print("\nPrograma detenido.")
+
+ 
