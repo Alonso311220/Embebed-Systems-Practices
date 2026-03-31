@@ -22,21 +22,6 @@ lista_reproductor = instancia.media_list_player_new()
 usb_ruta_detectada = None
 usb_lista_lista = False
 
-# --- PUNTO 4: CONTROL GPIO ---
-# Definimos los botones según tus pines
-btn_ant = Button(2)
-btn_sig = Button(3)
-btn_parar = Button(4)
-btn_pausa = Button(17)
-
-# Asignación de acciones
-btn_sig.when_pressed = lista_reproductor.next
-btn_ant.when_pressed = lista_reproductor.previous
-btn_parar.when_pressed = lista_reproductor.stop
-btn_pausa.when_pressed = lista_reproductor.pause
-btn_vol_mas.when_pressed = subir_vol
-btn_vol_menos.when_pressed = bajar_vol
-
 # --- FUNCIONES DE APOYO ---
 def generar_lista(directorio):
     """Crea una MediaList con pic01 a pic04 en el directorio dado"""
