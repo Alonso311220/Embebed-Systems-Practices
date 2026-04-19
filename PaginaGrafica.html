@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Histórico de Temperatura</title>
+
+  <!-- jQuery + jQuery UI -->
+  <link rel="stylesheet" href="css/jquery-ui.min.css"/>
+  <link rel="stylesheet" href="css/bootstrap.min.css">
+  <script src="js/jquery.min.js"></script>
+  <script src="js/jquery-ui.min.js"></script>
+
+  <!-- Chart.js -->
+  <script src="js/chart.umd.min.js"></script>
+
+  <style>
+    @import url('css/css2.css');
+
+    :root {
+      --bg:       #0d1117;
+      --panel:    #161b22;
+      --border:   #30363d;
+      --accent:   #00e5ff;
+      --accent2:  #ff4081;
+      --text:     #c9d1d9;
+      --muted:    #8b949e;
+      --warm:     #ff9800;
+      --cool:     #29b6f6;
+      --danger:   #f44336;
+      --ok:       #4caf50;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Barlow', sans-serif;
+      font-weight: 300;
+      min-height: 100vh;
+    }
+
+    /* ── HEADER ── */
+    header {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 20px 32px;
+      border-bottom: 1px solid var(--border);
+      background: linear-gradient(90deg, #0d1117 60%, #0a1a1f);
+    }
+    header .logo {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 1.6rem;
+      color: var(--accent);
+      letter-spacing: 2px;
+    }
+    header .logo span { color: var(--accent2); }
+    header .subtitle {
+      font-size: 0.8rem;
+      color: var(--muted);
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+    header .live-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: var(--ok);
+      box-shadow: 0 0 8px var(--ok);
+      animation: pulse 1.5s infinite;
+      margin-left: auto;
+    }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+    /* ── TOOLBAR ── */
+    #toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      align-items: flex-end;
+      padding: 18px 32px;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel);
+    }
+    #toolbar label {
+      font-size: 0.72rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      display: block;
+      margin-bottom: 4px;
+    }
+    #toolbar input[type="text"],
+    #toolbar select {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 7px 10px;
+      border-radius: 4px;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 0.85rem;
+      outline: none;
+      transition: border .2s;
+      width: 160px;
+    }
+    #toolbar input[type="text"]:focus,
+    #toolbar select:focus { border-color: var(--accent); }
+
+    .btn {
+      padding: 8px 18px;
+      border: 1px solid var(--accent);
+      background: transparent;
+      color: var(--accent);
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 0.82rem;
+      letter-spacing: 1px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background .2s, color .2s;
+    }
+    .btn:hover { background: var(--accent); color: var(--bg); }
+    .btn.danger { border-color: var(--accent2); color: var(--accent2); }
+    .btn.danger:hover { background: var(--accent2); color: #fff; }
+
+    /* ── STAT CARDS ── */
+    #stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 1px;
+      background: var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+    .stat-card {
+      background: var(--panel);
+      padding: 18px 24px;
+      text-align: center;
+    }
+    .stat-card .val {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 1.9rem;
+      color: var(--accent);
+      line-height: 1;
+    }
+    .stat-card .val.hot  { color: var(--warm); }
+    .stat-card .val.cold { color: var(--cool); }
+    .stat-card .val.warn { color: var(--danger); }
+    .stat-card .lbl {
+      font-size: 0.7rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-top: 4px;
+    }
+
+    /* ── MAIN LAYOUT ── */
+    #main {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 0;
+      height: auto;
+      min-height: 420px;
+    }
+
+    /* ── CHART ── */
+    #chart-panel {
+      padding: 20px 24px;
+      border-right: none;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    #chart-panel h2 {
+      font-size: 0.72rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 2px;
+    }
+    #chartWrap { flex: 1; position: relative; }
+
+    /* ── TABLE PANEL ── */
+    #table-panel {
+      display: flex;
+      flex-direction: column;
+    }
+    #table-panel .panel-header {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.72rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    #table-panel .panel-header .count {
+      font-family: 'Share Tech Mono', monospace;
+      color: var(--accent);
+    }
+    #tableWrap {
+      flex: 1;
+      overflow-y: auto;
+    }
+    #tableWrap::-webkit-scrollbar { width: 5px; }
+    #tableWrap::-webkit-scrollbar-track { background: var(--bg); }
+    #tableWrap::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 0.78rem;
+    }
+    thead th {
+      position: sticky;
+      top: 0;
+      background: var(--panel);
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      padding: 10px 14px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.68rem;
+    }
+    tbody tr {
+      border-bottom: 1px solid #1c2128;
+      cursor: pointer;
+      transition: background .12s;
+    }
+    tbody tr:hover { background: #1a2030; }
+    tbody tr.selected { background: #0a2535; }
+    tbody td {
+      padding: 8px 14px;
+      color: var(--text);
+    }
+    tbody td.temp {
+      font-weight: bold;
+    }
+    tbody td.temp.hot  { color: var(--warm); }
+    tbody td.temp.cold { color: var(--cool); }
+    tbody td.temp.norm { color: var(--ok); }
+    tbody td.temp.warn { color: var(--danger); }
+
+    .badge {
+      display: inline-block;
+      padding: 1px 7px;
+      border-radius: 20px;
+      font-size: 0.65rem;
+      letter-spacing: 0.5px;
+    }
+    .badge.hot  { background:#ff980022; color:var(--warm); border:1px solid #ff980044; }
+    .badge.cold { background:#29b6f622; color:var(--cool); border:1px solid #29b6f644; }
+    .badge.norm { background:#4caf5022; color:var(--ok);   border:1px solid #4caf5044; }
+    .badge.warn { background:#f4433622; color:var(--danger); border:1px solid #f4433644; }
+
+    .detail-row { display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border); }
+    .detail-row:last-child { border:none; }
+    .detail-key { color: var(--muted); font-size:0.8rem; text-transform:uppercase; letter-spacing:1px; }
+    .detail-val { font-family:'Share Tech Mono',monospace; color: var(--accent); }
+
+    /* ── SLIDER (jQuery UI) ── */
+    .ui-slider { background: var(--border) !important; border: none !important; height: 4px !important; border-radius: 2px !important; }
+    .ui-slider-range { background: var(--accent) !important; }
+    .ui-slider-handle {
+      background: var(--accent) !important;
+      border: 2px solid var(--bg) !important;
+      border-radius: 50% !important;
+      width: 14px !important; height: 14px !important;
+      top: -5px !important;
+      cursor: pointer !important;
+    }
+    #sliderWrap { padding: 0 8px; }
+    #sliderLabels { display:flex; justify-content:space-between; font-family:'Share Tech Mono',monospace; font-size:0.72rem; color:var(--muted); margin-top:4px; }
+
+    /* ── TABS (jQuery UI) ── */
+    #tabs { flex:1; display:flex; flex-direction:column; }
+    .ui-tabs { background:transparent !important; border:none !important; padding:0 !important; flex:1; display:flex; flex-direction:column; }
+    .ui-tabs-nav {
+      background: var(--panel) !important;
+      border: none !important;
+      border-bottom: 1px solid var(--border) !important;
+      padding: 0 8px !important;
+      border-radius: 0 !important;
+    }
+    .ui-tabs-nav li { background:transparent !important; border:none !important; margin-bottom:-1px !important; }
+    .ui-tabs-nav li a {
+      color: var(--muted) !important;
+      font-family:'Share Tech Mono',monospace !important;
+      font-size:0.78rem !important;
+      letter-spacing:1px !important;
+      padding: 10px 16px !important;
+    }
+    .ui-tabs-nav li.ui-tabs-active a { color: var(--accent) !important; border-bottom:2px solid var(--accent) !important; }
+    .ui-tabs-panel { background:transparent !important; border:none !important; padding:0 !important; flex:1; overflow:auto; }
+    .ui-tabs-panel::-webkit-scrollbar { width:5px; }
+    .ui-tabs-panel::-webkit-scrollbar-track { background:var(--bg); }
+    .ui-tabs-panel::-webkit-scrollbar-thumb { background:var(--border); border-radius:3px; }
+
+    /* ── FILE DROP ZONE ── */
+    #dropzone {
+      display: none;
+      margin: 10px 16px;
+      padding: 20px;
+      border: 2px dashed var(--border);
+      border-radius: 6px;
+      text-align: center;
+      font-size: 0.8rem;
+      color: var(--muted);
+      cursor: pointer;
+      transition: border-color .2s, color .2s;
+    }
+    #dropzone:hover, #dropzone.dragover { border-color: var(--accent); color: var(--accent); }
+    #dropzone .icon { font-size: 2rem; margin-bottom: 6px; }
+
+    /* ── HISTOGRAM ── */
+    #histoWrap { padding: 12px 16px; }
+    .histo-bar-row { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
+    .histo-label { font-family:'Share Tech Mono',monospace; font-size:0.72rem; color:var(--muted); width:48px; text-align:right; }
+    .histo-bar-bg { flex:1; height:18px; background:#1c2128; border-radius:2px; overflow:hidden; }
+    .histo-bar { height:100%; border-radius:2px; transition:width .4s ease; }
+    .histo-count { font-family:'Share Tech Mono',monospace; font-size:0.72rem; color:var(--muted); width:30px; }
+
+    /* ── PROGRESS BAR (jQuery UI) ── */
+    .ui-progressbar { background:var(--border) !important; border:none !important; height:3px !important; border-radius:2px !important; }
+    .ui-progressbar-value { background:var(--accent) !important; border:none !important; }
+
+    #loadingBar { display:none; padding:0 32px; }
+
+    /* responsive */
+    @media(max-width:900px){
+      #main { grid-template-columns:1fr; height:auto; }
+      #chart-panel { border-right:none; border-bottom:1px solid var(--border); height:300px; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div>
+    <div class="logo">TEMP<span>LOG</span></div>
+    <div class="subtitle">Monitor de temperatura · Histórico</div>
+  </div>
+  <div class="live-dot" title="Sistema activo"></div>
+</header>
+
+<!-- barra de carga -->
+<div id="loadingBar"><div id="progressBar"></div></div>
+
+
+<!-- stat cards -->
+<div id="stats">
+  <div class="stat-card"><div class="val" id="sTot">—</div><div class="lbl">Total lecturas</div></div>
+  <div class="stat-card"><div class="val" id="sMin" style="color:var(--cool)">—</div><div class="lbl">Mín (°C)</div></div>
+  <div class="stat-card"><div class="val" id="sMax" style="color:var(--warm)">—</div><div class="lbl">Máx (°C)</div></div>
+  <div class="stat-card"><div class="val" id="sAvg">—</div><div class="lbl">Promedio (°C)</div></div>
+</div>
+
+<!-- main -->
+<div id="main">
+  <!-- gráfica -->
+  <div id="chart-panel">
+    <h2>Serie temporal · temperatura (°C)</h2>
+    <div id="chartWrap"><canvas id="myChart"></canvas></div>
+  </div>
+
+  <!-- tabla + histograma en tabs -->
+  <div id="table-panel">
+    <div id="tabs">
+
+      <!-- tab 1: tabla -->
+      <div id="tab-table">
+        <div class="panel-header">
+          <span>Lecturas</span>
+          <span class="count" id="rowCount">0</span>
+        </div>
+        <div id="tableWrap">
+          <table id="dataTable">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Fecha / Hora</th>
+                <th>Temp (°C)</th>
+                <th>Estado</th>
+              </tr>
+            </thead>
+            <tbody id="tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- tab 2: histograma -->
+      <div id="tab-hist">
+        <div id="histoWrap"></div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script src="js/logica.js"></script>
+</body>
+</html>
