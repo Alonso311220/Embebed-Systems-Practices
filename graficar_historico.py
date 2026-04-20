@@ -34,9 +34,10 @@ def graficar():
     plt.xticks(rotation=45)
     plt.tight_layout()
     
-    # Mostrar la gráfica
-    print("Mostrando histórico...")
-    plt.show()
+    nombre_archivo = 'grafica_temperatura.png'
+    #Guardando gráfica
+    plt.savefig(nombre_archivo)
+    print(f"Grafica guardada exitosamente como: {nombre_archivo}")
 
 if __name__ == '__main__':
     graficar()
