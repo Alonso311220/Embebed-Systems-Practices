@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Control de Foco — Raspberry Pi</title>
+
+  <!-- jQuery + jQuery UI (sin PHP, solo CDN) -->
+  <link rel="stylesheet" href="css/jquery-ui.css">
+  <script src="js/jquery-3.7.1.min.js"></script>
+  <script src="js/jquery-ui.min.js"></script>
+
+  <style>
+    /* ── Fuentes ─────────────────────────────────────── */
+    @import 'css/css2.css';
+
+    /* ── Variables ───────────────────────────────────── */
+    :root {
+      --bg:        #0d0f14;
+      --panel:     #151820;
+      --border:    #1e2330;
+      --accent:    #f5a623;
+      --accent2:   #ff6b35;
+      --text:      #d4dbe8;
+      --muted:     #5a6278;
+      --on-color:  #ffe066;
+      --off-color: #2a2f3e;
+      --radius:    12px;
+      --glow:      0 0 24px rgba(245,166,35,0.35);
+    }
+
+    /* ── Reset / Base ────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Exo 2', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem 1rem;
+    }
+
+    /* ── Header ──────────────────────────────────────── */
+    header {
+      text-align: center;
+      margin-bottom: 2.5rem;
+    }
+    header h1 {
+      font-size: clamp(1.6rem, 4vw, 2.6rem);
+      font-weight: 800;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      color: var(--accent);
+      text-shadow: 0 0 18px rgba(245,166,35,.5);
+    }
+    header p {
+      font-family: 'Share Tech Mono', monospace;
+      color: var(--muted);
+      font-size: .85rem;
+      margin-top: .4rem;
+      letter-spacing: .1em;
+    }
+
+    /* ── Panel principal ─────────────────────────────── */
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 2.5rem 2rem;
+      width: 100%;
+      max-width: 480px;
+      box-shadow: 0 8px 40px rgba(0,0,0,.6);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2rem;
+    }
+
+    /* ── Ícono de foco ───────────────────────────────── */
+    .bulb-wrap {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .bulb-glow {
+      position: absolute;
+      width: 120px;
+      height: 120px;
+      border-radius: 50%;
+      background: radial-gradient(circle, var(--on-color) 0%, transparent 70%);
+      opacity: 0;
+      transition: opacity .4s ease, transform .4s ease;
+      transform: scale(.6);
+    }
+    .bulb-icon {
+      font-size: 5rem;
+      line-height: 1;
+      filter: drop-shadow(0 0 0px transparent);
+      transition: filter .4s ease, color .4s ease;
+      color: var(--muted);
+      z-index: 1;
+      user-select: none;
+    }
+
+    /* ── Lectura digital ─────────────────────────────── */
+    .power-display {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 3.8rem;
+      font-weight: 700;
+      color: var(--accent);
+      letter-spacing: .05em;
+      text-shadow: var(--glow);
+      transition: color .3s;
+      line-height: 1;
+    }
+    .power-display span.unit {
+      font-size: 1.6rem;
+      color: var(--muted);
+      margin-left: .15em;
+    }
+
+    /* ── Slider (jQuery UI override) ─────────────────── */
+    .slider-wrap {
+      width: 100%;
+    }
+    .slider-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: .78rem;
+      color: var(--muted);
+      font-family: 'Share Tech Mono', monospace;
+      margin-bottom: .6rem;
+      letter-spacing: .08em;
+    }
+
+    /* Pista */
+    #pwr-slider.ui-slider {
+      background: var(--off-color);
+      border: none;
+      border-radius: 999px;
+      height: 10px;
+      position: relative;
+    }
+    /* Rango llenado */
+    #pwr-slider .ui-slider-range {
+      background: linear-gradient(90deg, var(--accent2), var(--accent));
+      border-radius: 999px;
+    }
+    /* Pulgar */
+    #pwr-slider .ui-slider-handle {
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      background: #fff;
+      border: 3px solid var(--accent);
+      top: -8px;
+      cursor: pointer;
+      outline: none;
+      box-shadow: 0 0 10px rgba(245,166,35,.6);
+      transition: box-shadow .2s, border-color .2s;
+    }
+    #pwr-slider .ui-slider-handle:hover,
+    #pwr-slider .ui-slider-handle:focus {
+      box-shadow: 0 0 18px rgba(245,166,35,.9);
+      border-color: var(--on-color);
+    }
+
+    /* ── Botones ─────────────────────────────────────── */
+    .btn-row {
+      display: flex;
+      gap: .75rem;
+      width: 100%;
+      flex-wrap: wrap;
+    }
+    .btn {
+      flex: 1;
+      min-width: 80px;
+      padding: .65rem .5rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--off-color);
+      color: var(--text);
+      font-family: 'Exo 2', sans-serif;
+      font-size: .85rem;
+      font-weight: 600;
+      letter-spacing: .05em;
+      cursor: pointer;
+      transition: background .2s, border-color .2s, color .2s, box-shadow .2s;
+    }
+    .btn:hover {
+      background: #2e3448;
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    .btn.btn-apply {
+      background: linear-gradient(135deg, var(--accent2), var(--accent));
+      color: #000;
+      border-color: transparent;
+      font-weight: 800;
+    }
+    .btn.btn-apply:hover {
+      box-shadow: 0 0 16px rgba(245,166,35,.5);
+      color: #000;
+    }
+
+    /* ── Status bar ──────────────────────────────────── */
+    #status {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: .8rem;
+      letter-spacing: .08em;
+      padding: .5rem 1rem;
+      border-radius: 6px;
+      width: 100%;
+      text-align: center;
+      background: transparent;
+      border: 1px solid transparent;
+      transition: all .3s;
+    }
+    #status.ok  { color: #4ade80; border-color: #1a4030; background: #0a2018; }
+    #status.err { color: #f87171; border-color: #4a1010; background: #200808; }
+    #status.inf { color: var(--muted); border-color: var(--border); }
+
+    /* ── Footer ──────────────────────────────────────── */
+    footer {
+      margin-top: 2rem;
+      font-size: .75rem;
+      color: var(--muted);
+      font-family: 'Share Tech Mono', monospace;
+      letter-spacing: .07em;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>💡 Control de Foco</h1>
+    <p>Raspberry Pi &nbsp;·&nbsp; I²C → RP2040 &nbsp;·&nbsp; Slave 0x0A</p>
+  </header>
+
+  <div class="card">
+
+    <!-- Ícono animado -->
+    <div class="bulb-wrap">
+      <div class="bulb-glow" id="bulb-glow"></div>
+      <div class="bulb-icon" id="bulb-icon">💡</div>
+    </div>
+
+    <!-- Lectura digital -->
+    <div class="power-display" id="power-display">
+      0<span class="unit">%</span>
+    </div>
+
+    <!-- Slider jQuery UI -->
+    <div class="slider-wrap">
+      <div class="slider-label">
+        <span>0 %</span>
+        <span id="slider-val">0 %</span>
+        <span>100 %</span>
+      </div>
+      <div id="pwr-slider"></div>
+    </div>
+
+    <!-- Botones de acceso rápido -->
+    <div class="btn-row">
+      <button class="btn" onclick="setSlider(0)">OFF</button>
+      <button class="btn" onclick="setSlider(25)">25%</button>
+      <button class="btn" onclick="setSlider(50)">50%</button>
+      <button class="btn" onclick="setSlider(75)">75%</button>
+      <button class="btn" onclick="setSlider(100)">MAX</button>
+    </div>
+
+    <!-- Botón aplicar -->
+    <div class="btn-row">
+      <button class="btn btn-apply" id="btn-apply">
+        ⚡ APLICAR POTENCIA
+      </button>
+      <button class="btn" id="btn-read" title="Leer estado actual del RP2040">
+        🔄 LEER
+      </button>
+    </div>
+
+    <!-- Estado -->
+    <div id="status" class="inf">Listo — mueve el slider y presiona APLICAR</div>
+
+  </div>
+
+  <footer>
+    Servidor Flask · Puerto 5000 &nbsp;|&nbsp; smbus2 I²C Bus 1
+  </footer>
+
+  <script>
+
+  $(function () {
+
+  var appliedPower = 0;   // último valor confirmado por el RP2040
+
+  // ── Helper status bar ────────────────────────────────────
+  function setStatus(msg, tipo) {
+    $('#status').removeClass('ok err inf').addClass(tipo).text(msg);
+  }
+
+  // ── Actualiza SOLO el display visual──────
+  function updateDisplay(pwr) {
+    $('#slider-val').text(pwr + ' %');
+    $('#power-display').html(pwr + '<span class="unit">%</span>');
+
+    var opacity   = pwr / 100;
+    var scale     = 0.5 + (pwr / 100) * 1.2;
+    $('#bulb-glow').css({ opacity: opacity * 0.9, transform: 'scale(' + scale + ')' });
+    $('#bulb-icon').css({
+      color:  pwr === 0 ? '#5a6278' : '#ffe066',
+      filter: pwr === 0
+        ? 'drop-shadow(0 0 0px transparent)'
+        : 'drop-shadow(0 0 ' + (pwr * 0.18) + 'px rgba(255,220,80,0.9))'
+    });
+  }
+
+  // ── Inicializa el slider ─────────────────────────────────
+  $('#pwr-slider').slider({
+    min: 0, max: 100, step: 1, value: 0, range: 'min',
+    slide: function (event, ui) {
+      // Mientras se arrastra: solo actualiza el display, nunca el slider en sí
+      updateDisplay(ui.value);
+    }
+  });
+
+  // ── Botones rápidos: mueven el slider Y actualizan display ─
+  window.setSlider = function (val) {
+    $('#pwr-slider').slider('value', val);  // mueve el slider al preset
+    updateDisplay(val);                     // sincroniza el display
+  };
+
+  // Parsea la respuesta del servidor.
+  // no llama updateDisplay ni toca el slider,
+  // para que el usuario pueda seguir seleccionando el siguiente valor
+  async function mostrarRespuesta(data) {
+    if (data.ok) {
+      appliedPower = data.power_aplicado;
+      setStatus(
+        data.power_aplicado + '% aplicado' +
+        '  |  ' + data.potencia_w.toFixed(1) + ' W' +
+        '  |  ' + data.tiempo_ms.toFixed(4) + ' ms' +
+        '  |  ' + data.voltaje + ' V',
+        'ok'
+      );
+    } else {
+      setStatus('X  Error: ' + data.error, 'err');
+    }
+  }
+
+  // Lee el valor actual del slider en el instante del click
+  $('#btn-apply').on('click', function () {
+    var power = $('#pwr-slider').slider('value');   
+    setStatus('Enviando ' + power + '%…', 'inf');
+
+    $.ajax({
+      url:         '/set_power',
+      method:      'POST',
+      contentType: 'application/json',
+      data:        JSON.stringify({ power: power }),
+      success: function (data) {
+        mostrarRespuesta(data);
+      },
+      error: function (xhr) {
+        var msg = 'X Sin conexión con el servidor';
+        try { msg = JSON.parse(xhr.responseText).error; } catch (_) {}
+        setStatus(msg, 'err');
+      }
+    });
+  });
+
+  // Consulta el último estado del RP2040 sin enviar potencia nueva
+  $('#btn-read').on('click', function () {
+    setStatus('Leyendo estado…', 'inf');
+
+    $.ajax({
+      url:    '/read_status',
+      method: 'GET',
+      success: function (data) {
+        mostrarRespuesta(data);
+      },
+      error: function () {
+        setStatus('Sin lecturas previas o servidor no responde ):', 'err');
+      }
+    });
+  });
+
+  });
+  </script>
+
+</body>
+</html>
