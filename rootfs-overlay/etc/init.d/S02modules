@@ -1,0 +1,24 @@
+#!/bin/sh
+case "${1}" in
+    start)
+        # Exits if /etc/modules does not exists or lacks valid entries
+        [ -r /etc/modules ] && egrep -qv ’^($|#)’ /etc/modules || exit 0
+        # Load listed modules
+        while read module args; do
+            # Skip comments and empty lines.
+            case "$module" in
+                ""|"#"*) continue ;;
+            esac
+            # Try to load each module
+            printf "Loading ${module}"
+            modprobe ${module} ${args} > /dev/null
+            [ $? = 0 ] && echo "OK" || echo "FAIL"
+        done < /etc/modules
+        exit 0
+        ;;
+
+    *)  
+        echo "Usage: ${0} {start}"
+        exit 1
+        ;;
+esac

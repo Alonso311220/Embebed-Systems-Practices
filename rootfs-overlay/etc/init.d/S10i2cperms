@@ -1,0 +1,16 @@
+#!/bin/sh
+case "${1}" in
+    start)
+        # Loops over all i2c devices, if any
+        for iic in /dev/i2c*; do
+            chown root:i2c "${iic}"
+            chmod ug+rw "${iic}"
+        done
+        unset iic
+        ;;
+
+    *)
+        echo "Usage: ${0} {start}"
+        exit 1
+        ;;
+esac

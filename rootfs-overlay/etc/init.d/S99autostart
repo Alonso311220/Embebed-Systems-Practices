@@ -1,0 +1,15 @@
+#!/bin/sh
+case "${1}" in
+    start)
+        # Exits if /home/pi/start.sh does not exist
+        [ -f /home/pi/start.sh ] || exit 0
+        # Else executes it
+        su - pi -c /home/pi/start.sh
+        exit 0
+        ;;
+
+    *)
+        echo "Usage: ${0} {start}"
+        exit 1
+        ;;
+esac
