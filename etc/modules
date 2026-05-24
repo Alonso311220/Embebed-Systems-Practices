@@ -1,0 +1,6 @@
+# List of modules to be loaded during startup
+i2c-bcm2835
+i2c-dev
+w1-gpio
+w1-therm
+vc4

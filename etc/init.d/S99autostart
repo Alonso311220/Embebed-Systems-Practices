@@ -1,0 +1,20 @@
+#!/bin/sh
+# S99autostart - ejecuta start.sh como usuario pi al arrancar
+case "${1}" in
+    start)
+        # Espera a que el sistema este completamente listo
+        # y el logo del kernel haya sido visible unos segundos
+        sleep 3
+
+        # Exits if /home/pi/start.sh does not exist
+        [ -f /home/pi/start.sh ] || exit 0
+
+        # Ejecuta como usuario pi en segundo plano para no bloquear init
+        su - pi -c /home/pi/start.sh &
+        exit 0
+        ;;
+    *)
+        echo "Usage: ${0} {start}"
+        exit 1
+        ;;
+esac
