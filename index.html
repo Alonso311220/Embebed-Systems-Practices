@@ -1,0 +1,828 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Raspberry Kiosk</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet"/>
+<style>
+/* ══ RESET ══════════════════════════════════════════════════════ */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#080808;--card:#111;--border:#1e1e1e;--border-hi:#2e2e2e;
+  --text:#f0f0f0;--dim:#444;--dimmer:#252525;
+  --green:#2ecc71;--orange:#f39c12;--red:#e74c3c;--blue:#3498db;--purple:#9b59b6;
+  --hd:'Orbitron',monospace;--mono:'Share Tech Mono',monospace;
+}
+html,body{width:100%;height:100%;background:var(--bg);color:var(--text);
+  font-family:var(--mono);overflow:hidden;cursor:none}
+
+/* Scanlines CRT */
+body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:9999;
+  background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.04) 2px,rgba(0,0,0,.04) 4px)}
+
+/* ══ FONDO ANIMADO ══════════════════════════════════════════════ */
+#bg-grid{position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.035;
+  background-image:linear-gradient(var(--border-hi) 1px,transparent 1px),
+                   linear-gradient(90deg,var(--border-hi) 1px,transparent 1px);
+  background-size:60px 60px;
+  animation:gridDrift 30s linear infinite}
+@keyframes gridDrift{0%{background-position:0 0}100%{background-position:60px 60px}}
+
+#sweep{position:fixed;left:0;right:0;height:120px;pointer-events:none;z-index:1;
+  background:linear-gradient(to bottom,transparent,rgba(46,204,113,.025),transparent);
+  animation:sweep 14s linear infinite}
+@keyframes sweep{0%{top:-120px}100%{top:calc(100vh + 120px)}}
+
+/* ══ LOGO ═══════════════════════════════════════════════════════ */
+#logo{position:fixed;top:20px;left:24px;display:flex;align-items:center;gap:12px;z-index:100}
+#logo .badge{width:38px;height:38px;border-radius:10px;border:1px solid #2a2a2a;
+  background:#111;display:flex;align-items:center;justify-content:center;font-size:20px}
+#logo .name{font-family:var(--hd);font-size:11px;font-weight:700;letter-spacing:.18em;color:#aaa}
+#logo .sub{font-size:9px;color:var(--dim);letter-spacing:.12em;margin-top:2px}
+
+/* ══ RELOJ ══════════════════════════════════════════════════════ */
+#clock-wrap{position:fixed;top:20px;right:24px;text-align:right;z-index:100}
+#clock{font-family:var(--hd);font-size:clamp(22px,3vw,40px);font-weight:900;
+  letter-spacing:.08em;color:var(--text)}
+#date{font-size:10px;color:var(--dim);letter-spacing:.06em;margin-top:3px;text-transform:capitalize}
+
+/* ══ STATUS USB SUPERIOR ════════════════════════════════════════ */
+#usb-dots{position:fixed;top:28px;left:50%;transform:translateX(-50%);
+  display:flex;align-items:center;gap:20px;z-index:100}
+.udot{display:flex;align-items:center;gap:6px;font-size:9px;color:var(--dimmer);letter-spacing:.08em}
+.udot .d{width:6px;height:6px;border-radius:50%;background:#1e1e1e;transition:all .4s ease}
+.udot.on{color:#3a3a3a}
+.udot.on .d{background:var(--green);box-shadow:0 0 8px var(--green);animation:blink 2.5s ease-in-out infinite}
+.udot.new .d{background:var(--orange);box-shadow:0 0 10px var(--orange);animation:blink .6s ease-in-out infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
+
+/* ══ MENÚ PRINCIPAL ═════════════════════════════════════════════ */
+#wrapper{position:relative;z-index:10;width:100vw;height:100vh;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:clamp(20px,4vh,36px);padding-bottom:36px}
+
+#title-block{text-align:center;animation:riseUp .6s cubic-bezier(.16,1,.3,1) both}
+#title-label{font-size:9px;letter-spacing:.25em;color:var(--dim);margin-bottom:10px}
+#title-main{font-family:var(--hd);font-size:clamp(18px,2.8vw,36px);font-weight:900;
+  letter-spacing:.06em;color:var(--text)}
+.title-rule{width:80px;height:1px;margin:10px auto 0;background:var(--border-hi)}
+
+@keyframes riseUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+
+/* Tarjetas */
+#cards{display:flex;flex-wrap:wrap;justify-content:center;
+  gap:clamp(10px,2vw,20px);padding:0 20px;
+  animation:riseUp .6s .07s cubic-bezier(.16,1,.3,1) both}
+
+.card{
+  position:relative;
+  width:clamp(120px,14vw,180px);
+  height:clamp(150px,22vh,230px);
+  border-radius:16px;
+  background:var(--card);
+  border:1px solid var(--border);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:10px;overflow:hidden;cursor:pointer;
+  transition:transform .35s cubic-bezier(.34,1.56,.64,1),
+             border-color .25s,box-shadow .25s,background .25s}
+.card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;
+  background:transparent;transition:background .25s}
+.card-accent{position:absolute;bottom:-20px;right:-20px;
+  width:70px;height:70px;border-radius:50%;opacity:0;transition:opacity .3s,background .3s}
+.card-icon{font-size:clamp(28px,3.6vw,42px);line-height:1;
+  position:relative;z-index:2;transition:filter .25s,transform .25s}
+.card-label{font-family:var(--hd);font-size:clamp(9px,1.1vw,13px);font-weight:700;
+  letter-spacing:.07em;text-transform:uppercase;color:#444;
+  position:relative;z-index:2;transition:color .25s;text-align:center;padding:0 8px}
+.card-sub{font-size:clamp(7px,.8vw,9px);color:var(--dimmer);
+  letter-spacing:.1em;position:relative;z-index:2;
+  transition:color .25s;text-align:center;padding:0 6px}
+.card-usb{position:absolute;top:8px;right:8px;
+  font-size:8px;letter-spacing:.06em;padding:2px 7px;border-radius:6px;
+  background:#0e0e0e;border:1px solid #1e1e1e;color:#2e2e2e;transition:all .3s}
+.card.usb-ok .card-usb{background:rgba(46,204,113,.1);border-color:rgba(46,204,113,.4);color:var(--green)}
+.card-pip{position:absolute;bottom:10px;width:24px;height:2px;border-radius:1px;
+  opacity:0;transition:opacity .3s;animation:pipPulse 1.8s ease-in-out infinite}
+@keyframes pipPulse{0%,100%{transform:scaleX(1)}50%{transform:scaleX(.4)}}
+
+/* Estado activo */
+.card.active{
+  transform:translateY(-12px) scale(1.06);
+  background:#181818}
+.card.active::before{background:var(--card-color,#fff)}
+.card.active .card-accent{opacity:.08;background:var(--card-color,#fff)}
+.card.active .card-icon{filter:drop-shadow(0 0 14px var(--card-color,#fff));transform:scale(1.08)}
+.card.active .card-label{color:var(--text)}
+.card.active .card-sub{color:#555}
+.card.active .card-pip{opacity:1;background:var(--card-color,#fff)}
+
+/* Controles */
+#controls{display:flex;gap:24px;font-size:9px;color:var(--dimmer);
+  animation:riseUp .6s .14s cubic-bezier(.16,1,.3,1) both}
+.ctrl{display:flex;align-items:center;gap:6px}
+.ctrl kbd{background:#111;border:1px solid #222;border-radius:4px;
+  padding:2px 8px;color:#3a3a3a;font-family:var(--mono);font-size:.9em;letter-spacing:.04em}
+
+/* ══ OVERLAY BASE ════════════════════════════════════════════════ */
+.ov{display:none;position:fixed;inset:0;z-index:3000;
+  background:rgba(6,6,6,.97);backdrop-filter:blur(16px);
+  flex-direction:column;align-items:center;
+  padding:44px 20px 20px;gap:0;overflow:hidden}
+.ov.show{display:flex}
+.ov-back{font-size:9px;color:var(--dimmer);letter-spacing:.12em;margin-bottom:10px}
+.ov-title{font-family:var(--hd);font-size:clamp(18px,3vw,40px);font-weight:900;
+  letter-spacing:.06em;text-align:center;transition:color .25s}
+.ov-rule{width:80px;height:1px;margin:10px auto 18px;transition:background .25s}
+.ov-hint{font-size:9px;color:var(--dim);letter-spacing:.1em;margin-bottom:clamp(14px,2.5vh,28px)}
+.ov-foot{margin-top:auto;padding-top:14px;display:flex;gap:20px;font-size:9px;color:var(--dimmer)}
+
+/* ══ SUBCARDS STREAMING ══════════════════════════════════════════ */
+.sub-grid{display:flex;flex-wrap:wrap;gap:clamp(8px,1.6vw,18px);
+  justify-content:center;max-width:860px}
+.scard{
+  width:clamp(90px,11vw,130px);height:clamp(90px,11vw,130px);
+  border-radius:12px;background:var(--card);border:1px solid var(--border);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:7px;cursor:pointer;
+  transition:transform .3s cubic-bezier(.34,1.56,.64,1),
+             border-color .2s,box-shadow .2s,background .2s}
+.scard .si{font-size:clamp(22px,3vw,34px);line-height:1;transition:filter .2s}
+.scard .sl{font-family:var(--hd);font-size:clamp(7px,.85vw,10px);font-weight:700;
+  letter-spacing:.07em;text-transform:uppercase;color:#3a3a3a;transition:color .2s;text-align:center}
+.scard.active{transform:translateY(-8px) scale(1.1);background:#181818}
+.scard.active .sl{color:var(--text)}
+
+/* Botón de apertura */
+.open-btn{
+  display:inline-flex;align-items:center;gap:8px;margin-top:18px;
+  padding:10px 30px;font-family:var(--hd);font-size:10px;font-weight:700;
+  letter-spacing:.12em;text-transform:uppercase;border-radius:8px;cursor:pointer;
+  border:1px solid #2a2a2a;background:transparent;color:#444;
+  text-decoration:none;transition:all .25s ease}
+.open-btn.ready{border-color:currentColor;color:var(--text)}
+.open-btn.ready:hover{background:rgba(255,255,255,.06)}
+
+/* ══ EXPLORADOR USB ══════════════════════════════════════════════ */
+#search-wrap{
+  display:flex;align-items:center;gap:10px;width:min(720px,92vw);
+  background:#0d0d0d;border:1px solid #1e1e1e;border-radius:10px;
+  padding:9px 14px;margin-bottom:12px;flex-shrink:0;transition:border-color .2s}
+#search-wrap:focus-within{border-color:#2e2e2e}
+#usb-search{flex:1;background:transparent;border:none;outline:none;
+  font-family:var(--mono);font-size:13px;color:var(--text);
+  letter-spacing:.05em;caret-color:var(--blue)}
+#usb-search::placeholder{color:var(--dimmer)}
+#s-clear{background:none;border:none;color:var(--dimmer);font-size:14px;
+  cursor:pointer;padding:0;line-height:1;transition:color .2s}
+#s-clear:hover{color:#888}
+
+#file-area{width:min(720px,92vw);flex:1;overflow-y:auto;overflow-x:hidden;
+  background:#0a0a0a;border:1px solid #191919;border-radius:10px;
+  scrollbar-width:thin;scrollbar-color:#1e1e1e #0a0a0a}
+#file-area::-webkit-scrollbar{width:4px}
+#file-area::-webkit-scrollbar-thumb{background:#1e1e1e;border-radius:2px}
+
+.frow{display:flex;align-items:center;gap:14px;padding:12px 16px;
+  border-bottom:1px solid #111;cursor:pointer;transition:background .15s;
+  border-left:2px solid transparent}
+.frow:last-child{border-bottom:none}
+.frow:hover,.frow.sel{background:#131313}
+.f-ico{font-size:20px;flex-shrink:0;width:28px;text-align:center}
+.f-info{flex:1;min-width:0}
+.f-name{font-size:13px;color:#999;letter-spacing:.04em;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.f-meta{font-size:10px;color:var(--dimmer);letter-spacing:.08em;margin-top:2px}
+.f-act{font-family:var(--hd);font-size:8px;font-weight:700;letter-spacing:.1em;
+  color:var(--dimmer);padding:4px 10px;border:1px solid #1e1e1e;border-radius:5px;
+  flex-shrink:0;transition:all .2s}
+.frow.sel{border-left-width:2px}
+.frow.sel .f-name{color:var(--text)}
+.frow.sel .f-act{color:var(--text)}
+
+#usb-empty{display:none;align-items:center;justify-content:center;
+  gap:10px;padding:48px;color:var(--dimmer);flex-direction:column}
+#usb-empty .e-icon{font-size:36px}
+#usb-empty .e-msg{font-size:11px;letter-spacing:.12em}
+
+/* Barra "reproduciendo" */
+#now-playing{width:min(720px,92vw);margin-top:10px;flex-shrink:0;
+  display:none;align-items:center;gap:12px;
+  background:#0d0d0d;border:1px solid #1e1e1e;border-radius:8px;padding:10px 16px}
+.np-dot{width:7px;height:7px;border-radius:50%;background:var(--green);
+  animation:blink .9s ease-in-out infinite;flex-shrink:0}
+#np-text{flex:1;font-size:11px;color:#888;letter-spacing:.06em;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#np-stop{background:none;border:1px solid #222;border-radius:5px;
+  color:#444;font-family:var(--mono);font-size:9px;letter-spacing:.07em;
+  padding:4px 10px;cursor:pointer;transition:all .2s}
+#np-stop:hover{border-color:#555;color:#aaa}
+
+/* ══ SIN USB ════════════════════════════════════════════════════ */
+#no-usb{display:none;position:fixed;inset:0;z-index:2500;
+  background:rgba(6,6,6,.97);backdrop-filter:blur(12px);
+  flex-direction:column;align-items:center;justify-content:center;gap:16px}
+#no-usb.show{display:flex}
+.nu-ico{font-size:60px;opacity:.2}
+.nu-title{font-family:var(--hd);font-size:clamp(15px,2.4vw,30px);
+  font-weight:900;color:#282828;letter-spacing:.06em}
+.nu-msg{font-size:11px;color:#2a2a2a;letter-spacing:.1em;text-align:center;
+  max-width:360px;line-height:1.8}
+
+/* ══ TOAST ══════════════════════════════════════════════════════ */
+#toast{display:none;position:fixed;bottom:20px;right:20px;z-index:6000;
+  min-width:300px;max-width:420px;background:#111;border-radius:12px;
+  border:1px solid #1e1e1e;overflow:hidden;
+  box-shadow:0 8px 40px rgba(0,0,0,.7)}
+#toast .t-accent{height:2px;background:var(--orange)}
+#toast .t-body{display:flex;align-items:flex-start;gap:14px;padding:16px 18px 14px}
+#toast .t-em{font-size:28px;line-height:1;flex-shrink:0;margin-top:1px}
+#toast .t-txt{flex:1}
+#toast .t-title{font-family:var(--hd);font-size:12px;font-weight:900;
+  letter-spacing:.08em;color:var(--orange);margin-bottom:4px}
+#toast .t-msg{font-size:11px;color:#888;letter-spacing:.06em;line-height:1.5}
+#toast .t-x{font-size:16px;color:var(--dimmer);cursor:pointer;
+  flex-shrink:0;transition:color .2s;line-height:1}
+#toast .t-x:hover{color:#888}
+#toast .t-bar{height:2px;background:#1e1e1e}
+#toast .t-fill{height:100%;width:100%;background:var(--orange);
+  transition:width linear}
+#toast.err .t-accent,#toast.err .t-fill{background:var(--red)}
+#toast.err .t-title{color:var(--red)}
+
+/* ══ DEMO HINT ══════════════════════════════════════════════════ */
+#hint{position:fixed;bottom:8px;right:14px;z-index:400;
+  font-size:8px;color:#191919;letter-spacing:.09em;line-height:2;
+  text-align:right;pointer-events:none}
+</style>
+</head>
+<body>
+
+<div id="bg-grid"></div>
+<div id="sweep"></div>
+
+<!-- Logo -->
+<div id="logo">
+  <div class="badge">🍓</div>
+  <div>
+    <div class="name">RASPBERRY KIOSK</div>
+    <div class="sub">Pi 4 · Buildroot · Flask + Pygame</div>
+  </div>
+</div>
+
+<!-- Reloj -->
+<div id="clock-wrap">
+  <div id="clock">00:00:00</div>
+  <div id="date">—</div>
+</div>
+
+<!-- Indicadores USB superiores -->
+<div id="usb-dots">
+  <div class="udot" id="ud-0"><div class="d"></div><span>USB 1</span></div>
+  <div class="udot" id="ud-1"><div class="d"></div><span>USB 2</span></div>
+  <div class="udot" id="ud-2"><div class="d"></div><span>USB 3</span></div>
+  <div class="udot" id="ud-3"><div class="d"></div><span>USB 4</span></div>
+</div>
+
+<!-- Menú principal -->
+<div id="wrapper">
+  <div id="title-block">
+    <div id="title-label">SISTEMA MULTIMEDIA</div>
+    <div id="title-main">¿QUÉ DESEAS VER?</div>
+    <div class="title-rule"></div>
+  </div>
+  <div id="cards"><!-- generado por JS --></div>
+  <div id="controls">
+    <div class="ctrl"><kbd>← →</kbd><span>Navegar</span></div>
+    <div class="ctrl"><kbd>ENTER</kbd><span>Seleccionar</span></div>
+    <div class="ctrl"><kbd>ESC</kbd><span>Volver</span></div>
+  </div>
+</div>
+
+<!-- ══ OVERLAY STREAMING VIDEO ══════════════════════════════════ -->
+<div class="ov" id="ov-video">
+  <div class="ov-back">[ ESC para volver ]</div>
+  <div class="ov-title" id="sv-title">STREAM VIDEO</div>
+  <div class="ov-rule"  id="sv-rule"></div>
+  <div class="ov-hint">Selecciona un servicio · ENTER o clic para abrir en Chromium</div>
+  <div class="sub-grid" id="sv-grid"></div>
+  <a class="open-btn" id="sv-btn" href="#" target="_self">
+    <span id="sv-btn-ico"></span>
+    <span id="sv-btn-lbl">Abrir servicio</span>
+    <span>→</span>
+  </a>
+  <div class="ov-foot">
+    <div class="ctrl"><kbd>← →</kbd><span>Navegar</span></div>
+    <div class="ctrl"><kbd>ENTER</kbd><span>Abrir</span></div>
+    <div class="ctrl"><kbd>ESC</kbd><span>Volver</span></div>
+  </div>
+</div>
+
+<!-- ══ OVERLAY STREAMING MÚSICA ════════════════════════════════ -->
+<div class="ov" id="ov-music">
+  <div class="ov-back">[ ESC para volver ]</div>
+  <div class="ov-title" id="sm-title">STREAM MÚSICA</div>
+  <div class="ov-rule"  id="sm-rule"></div>
+  <div class="ov-hint">Selecciona un servicio · ENTER o clic para abrir en Chromium</div>
+  <div class="sub-grid" id="sm-grid"></div>
+  <a class="open-btn" id="sm-btn" href="#" target="_self">
+    <span id="sm-btn-ico"></span>
+    <span id="sm-btn-lbl">Abrir servicio</span>
+    <span>→</span>
+  </a>
+  <div class="ov-foot">
+    <div class="ctrl"><kbd>← →</kbd><span>Navegar</span></div>
+    <div class="ctrl"><kbd>ENTER</kbd><span>Abrir</span></div>
+    <div class="ctrl"><kbd>ESC</kbd><span>Volver</span></div>
+  </div>
+</div>
+
+<!-- ══ OVERLAY EXPLORADOR USB ═══════════════════════════════════ -->
+<div class="ov" id="ov-usb">
+  <div class="ov-back">[ ESC para volver ]</div>
+  <div class="ov-title" id="usb-title">VIDEOS USB</div>
+  <div class="ov-rule"  id="usb-rule"></div>
+  <div class="ov-hint">Escribe para buscar · ↑↓ para navegar · ENTER para reproducir</div>
+
+  <div id="search-wrap">
+    <span style="font-size:14px;color:var(--dimmer)">🔍</span>
+    <input id="usb-search" type="text" placeholder="Buscar archivo…" autocomplete="off" spellcheck="false"/>
+    <button id="s-clear">✕</button>
+  </div>
+
+  <div id="file-area">
+    <div id="usb-empty">
+      <div class="e-icon">📂</div>
+      <div class="e-msg">SIN RESULTADOS</div>
+    </div>
+  </div>
+
+  <div id="now-playing">
+    <div class="np-dot"></div>
+    <div id="np-text">—</div>
+    <button id="np-stop">■ DETENER</button>
+  </div>
+
+  <div class="ov-foot">
+    <div class="ctrl"><kbd>↑ ↓</kbd><span>Navegar</span></div>
+    <div class="ctrl"><kbd>ENTER</kbd><span>Reproducir</span></div>
+    <div class="ctrl"><kbd>ESC</kbd><span>Volver</span></div>
+  </div>
+</div>
+
+<!-- ══ SIN USB ════════════════════════════════════════════════════ -->
+<div id="no-usb">
+  <div class="nu-ico" id="nu-ico">📽</div>
+  <div class="nu-title" id="nu-title">SIN DISPOSITIVO USB</div>
+  <div class="nu-msg"  id="nu-msg">Conecta un USB e inténtalo de nuevo.</div>
+  <div style="font-size:9px;color:#222;letter-spacing:.1em;margin-top:8px">[ ESC para volver ]</div>
+</div>
+
+<!-- Toast -->
+<div id="toast">
+  <div class="t-accent"></div>
+  <div class="t-body">
+    <div class="t-em" id="t-em">🔌</div>
+    <div class="t-txt">
+      <div class="t-title" id="t-title">AVISO</div>
+      <div class="t-msg"   id="t-msg">—</div>
+    </div>
+    <div class="t-x" id="t-x">✕</div>
+  </div>
+  <div class="t-bar"><div class="t-fill" id="t-fill"></div></div>
+</div>
+
+<div id="hint">DEMO: <span style="opacity:.5">U</span> conectar USB &nbsp; <span style="opacity:.5">D</span> desconectar</div>
+
+<!-- ═══════════════════ JAVASCRIPT ══════════════════════════════ -->
+<script>
+const API = "http://localhost:5000";
+
+/* ══ DATOS ══════════════════════════════════════════════════════ */
+const ITEMS = [
+  {label:"Stream Video",  icon:"🎬", key:"vid-on",  sub:"Netflix · HBO · Disney+", color:"#e74c3c"},
+  {label:"Stream Música", icon:"🎵", key:"mus-on",  sub:"Spotify · Deezer · Tidal", color:"#2ecc71"},
+  {label:"Videos USB",    icon:"📽", key:"vid-usb", sub:"MP4 · MKV · AVI",           color:"#e67e22",
+    ext:["mp4","mkv","avi","mov","webm","ts","m4v"]},
+  {label:"Música USB",    icon:"🎶", key:"aud-usb", sub:"MP3 · FLAC · OGG",           color:"#9b59b6",
+    ext:["mp3","flac","ogg","wav","aac","m4a","opus"]},
+  {label:"Fotos USB",     icon:"🖼", key:"img-usb", sub:"JPG · PNG · HEIC",           color:"#f1c40f",
+    ext:["jpg","jpeg","png","heic","gif","webp","bmp"]}
+];
+
+const SVC_VIDEO = [
+  {label:"Netflix",   icon:"🎬", color:"#e50914", url:"https://www.netflix.com"},
+  {label:"HBO Max",   icon:"👑", color:"#8a2be2", url:"https://www.hbomax.com"},
+  {label:"Disney+",   icon:"✨", color:"#1139c4", url:"https://www.disneyplus.com"},
+  {label:"Prime",     icon:"📦", color:"#00a8e1", url:"https://www.primevideo.com"},
+  {label:"Blim",      icon:"📺", color:"#ff6b00", url:"https://www.blim.com"},
+  {label:"YouTube",   icon:"▶",  color:"#ff0000", url:"https://www.youtube.com"}
+];
+
+const SVC_MUSIC = [
+  {label:"Spotify",     icon:"🎵", color:"#1db954", url:"https://open.spotify.com"},
+  {label:"Deezer",      icon:"🎧", color:"#a238ff", url:"https://www.deezer.com"},
+  {label:"SoundCloud",  icon:"☁",  color:"#ff5500", url:"https://soundcloud.com"},
+  {label:"YT Music",    icon:"🎶", color:"#ff0000", url:"https://music.youtube.com"},
+  {label:"Apple Music", icon:"🍎", color:"#fa243c", url:"https://music.apple.com"},
+  {label:"Tidal",       icon:"🌊", color:"#00bfff", url:"https://tidal.com"}
+];
+
+const EXT_ICON = {
+  mp4:"🎥",mkv:"🎥",avi:"🎥",mov:"🎥",webm:"🎥",ts:"🎥",m4v:"🎥",
+  mp3:"🎵",flac:"🎵",ogg:"🎵",wav:"🎵",aac:"🎵",m4a:"🎵",opus:"🎵",
+  jpg:"🖼",jpeg:"🖼",png:"🖼",heic:"🖼",gif:"🖼",webp:"🖼",bmp:"🖼"
+};
+
+/* ══ ESTADO ═════════════════════════════════════════════════════ */
+let sel=0, scene="main", subSel=0, subList=[];
+let usbFiles=[], usbFiltered=[], fileSel=0, curItem=null;
+let USB=[false,false,false,false];
+
+/* ══ UTILIDADES ══════════════════════════════════════════════════ */
+const rgba=(hex,a)=>{
+  const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);
+  return `rgba(${r},${g},${b},${a})`;
+};
+const fileExt=n=>(n.split(".").pop()||"").toLowerCase();
+const pad=v=>String(v).padStart(2,"0");
+
+/* ══ RELOJ ═══════════════════════════════════════════════════════ */
+const tick=()=>{
+  const n=new Date();
+  document.getElementById("clock").textContent=`${pad(n.getHours())}:${pad(n.getMinutes())}:${pad(n.getSeconds())}`;
+  document.getElementById("date").textContent=n.toLocaleDateString("es-MX",{weekday:"long",day:"numeric",month:"long"});
+};
+tick(); setInterval(tick,1000);
+
+/* ══ CONSTRUIR TARJETAS ══════════════════════════════════════════ */
+const $cards=document.getElementById("cards");
+ITEMS.forEach((item,i)=>{
+  const d=document.createElement("div");
+  d.className="card";
+  d.dataset.i=i;
+  d.style.setProperty("--card-color",item.color);
+  d.innerHTML=`
+    <div class="card-accent"></div>
+    <div class="card-icon">${item.icon}</div>
+    <div class="card-label">${item.label}</div>
+    <div class="card-sub">${item.sub}</div>
+    ${item.key.includes("usb")?'<div class="card-usb">SIN USB</div>':''}
+    <div class="card-pip" style="background:${item.color}"></div>`;
+  d.addEventListener("mouseenter",()=>{if(scene==="main"){sel=i;setActive(i);}});
+  d.addEventListener("click",()=>{if(scene==="main"){sel=i;setActive(i);launch(i);}});
+  $cards.appendChild(d);
+});
+setActive(0);
+
+/* ══ TARJETA ACTIVA ══════════════════════════════════════════════ */
+function setActive(idx){
+  document.querySelectorAll(".card").forEach((c,i)=>{
+    c.classList.toggle("active",i===idx);
+    const col=ITEMS[i].color;
+    if(i===idx){
+      c.style.borderColor=col;
+      c.style.boxShadow=`0 0 32px ${rgba(col,.28)},0 20px 56px rgba(0,0,0,.7)`;
+    } else {
+      c.style.borderColor="var(--border)";
+      c.style.boxShadow="0 4px 20px rgba(0,0,0,.5)";
+    }
+  });
+}
+
+/* ══ SUBCARDS STREAMING ══════════════════════════════════════════ */
+function buildSub(gridId,list){
+  const g=document.getElementById(gridId);
+  g.innerHTML="";
+  list.forEach((s,i)=>{
+    const c=document.createElement("div");
+    c.className="scard";
+    c.dataset.si=i;
+    c.innerHTML=`<div class="si">${s.icon}</div><div class="sl">${s.label}</div>`;
+    c.addEventListener("mouseenter",()=>{subSel=i;applySub();});
+    c.addEventListener("click",()=>{subSel=i;goSvc();});
+    g.appendChild(c);
+  });
+}
+
+function applySub(){
+  const isV=(scene==="vid-on");
+  const gId=isV?"sv-grid":"sm-grid";
+  const tId=isV?"sv-title":"sm-title";
+  const rId=isV?"sv-rule":"sm-rule";
+  const bId=isV?"sv-btn":"sm-btn";
+
+  document.querySelectorAll(`#${gId} .scard`).forEach((c,i)=>{
+    const col=subList[i].color, on=(i===subSel);
+    c.classList.toggle("active",on);
+    if(on){
+      c.style.borderColor=col;
+      c.style.boxShadow=`0 0 22px ${rgba(col,.35)},0 10px 30px rgba(0,0,0,.6)`;
+      c.querySelector(".si").style.filter=`drop-shadow(0 0 10px ${col})`;
+    } else {
+      c.style.borderColor="var(--border)";
+      c.style.boxShadow="";
+      c.querySelector(".si").style.filter="none";
+    }
+  });
+
+  const svc=subList[subSel], col=svc.color;
+  document.getElementById(tId).style.color=col;
+  document.getElementById(rId).style.background=`linear-gradient(90deg,transparent,${col},transparent)`;
+
+  const btn=document.getElementById(bId);
+  btn.className="open-btn ready";
+  btn.style.color=col;
+  btn.style.borderColor=rgba(col,.5);
+  document.getElementById(`${isV?"sv":"sm"}-btn-ico`).textContent=svc.icon;
+  document.getElementById(`${isV?"sv":"sm"}-btn-lbl`).textContent="Abrir "+svc.label;
+  btn.href=svc.url;
+}
+
+function goSvc(){
+  const btn=document.getElementById(scene==="vid-on"?"sv-btn":"sm-btn");
+  window.location.href=btn.href;
+}
+
+/* ══ EXPLORADOR USB ══════════════════════════════════════════════ */
+function openUsbOv(idx){
+  curItem=ITEMS[idx]; scene="usb";
+  const col=curItem.color;
+  document.getElementById("usb-title").textContent=curItem.label.toUpperCase();
+  document.getElementById("usb-title").style.color=col;
+  document.getElementById("usb-rule").style.background=`linear-gradient(90deg,transparent,${col},transparent)`;
+  document.getElementById("ov-usb").classList.add("show");
+  document.getElementById("usb-search").value="";
+  document.getElementById("usb-search").focus();
+  loadFiles();
+}
+
+function loadFiles(){
+  const exts=(curItem.ext||[]).join(",");
+  fetch(`${API}/list?ext=${exts}`)
+    .then(r=>r.json())
+    .then(d=>{usbFiles=d.files||[];applyFilter();})
+    .catch(()=>{usbFiles=demoFiles(curItem.key);applyFilter();});
+}
+
+/* Archivos de demostración cuando Flask no está corriendo */
+function demoFiles(key){
+  const d={
+    "vid-usb":[
+      {name:"Pelicula_2024.mp4",    size:"1.4 GB",path:"/media/usb/Pelicula_2024.mp4"},
+      {name:"Serie_Temporada1.mkv", size:"720 MB",path:"/media/usb/Serie_Temporada1.mkv"},
+      {name:"Vacaciones_verano.mp4",size:"380 MB",path:"/media/usb/Vacaciones_verano.mp4"},
+      {name:"Concierto_Live.avi",   size:"2.1 GB",path:"/media/usb/Concierto_Live.avi"},
+      {name:"Documental_4K.mp4",    size:"3.2 GB",path:"/media/usb/Documental_4K.mp4"}
+    ],
+    "aud-usb":[
+      {name:"Album_Rock_Clasico.mp3",size:"82 MB", path:"/media/usb/Album_Rock_Clasico.mp3"},
+      {name:"Jazz_Collection.flac",  size:"320 MB",path:"/media/usb/Jazz_Collection.flac"},
+      {name:"Podcast_Ep12.mp3",      size:"45 MB", path:"/media/usb/Podcast_Ep12.mp3"},
+      {name:"Sesion_Live.wav",       size:"180 MB",path:"/media/usb/Sesion_Live.wav"}
+    ],
+    "img-usb":[
+      {name:"Foto_Viaje_Paris.jpg",  size:"4.2 MB",path:"/media/usb/Foto_Viaje_Paris.jpg"},
+      {name:"Foto_Familia_2024.jpg", size:"3.8 MB",path:"/media/usb/Foto_Familia_2024.jpg"},
+      {name:"Paisaje_4K.jpg",        size:"8.7 MB",path:"/media/usb/Paisaje_4K.jpg"}
+    ]
+  };
+  return d[key]||[];
+}
+
+function applyFilter(){
+  const q=document.getElementById("usb-search").value.toLowerCase().trim();
+  usbFiltered=q?usbFiles.filter(f=>f.name.toLowerCase().includes(q)):usbFiles.slice();
+  fileSel=0;
+  renderFiles();
+}
+
+function renderFiles(){
+  const area=document.getElementById("file-area");
+  area.querySelectorAll(".frow").forEach(r=>r.remove());
+  const empty=document.getElementById("usb-empty");
+  if(!usbFiltered.length){empty.style.display="flex";return;}
+  empty.style.display="none";
+  const col=curItem?curItem.color:"#f5f5f5";
+
+  usbFiltered.forEach((f,i)=>{
+    const e=fileExt(f.name), ico=EXT_ICON[e]||"📄";
+    const row=document.createElement("div");
+    row.className="frow"; row.dataset.fi=i;
+    row.innerHTML=`
+      <div class="f-ico">${ico}</div>
+      <div class="f-info">
+        <div class="f-name">${f.name}</div>
+        <div class="f-meta">${f.size||""} · ${e.toUpperCase()}</div>
+      </div>
+      <div class="f-act">▶ ABRIR</div>`;
+    row.addEventListener("mouseenter",()=>{fileSel=i;hlFile(i);});
+    row.addEventListener("click",()=>{fileSel=i;playFile(i);});
+    area.appendChild(row);
+  });
+  hlFile(0);
+}
+
+function hlFile(idx){
+  const col=curItem?curItem.color:"#f5f5f5";
+  document.querySelectorAll(".frow").forEach((r,i)=>{
+    const on=(i===idx);
+    r.classList.toggle("sel",on);
+    r.style.borderLeftColor=on?col:"transparent";
+    r.querySelector(".f-act").style.color=on?col:"var(--dimmer)";
+    r.querySelector(".f-act").style.borderColor=on?rgba(col,.4):"#1e1e1e";
+  });
+  // auto-scroll
+  const area=document.getElementById("file-area");
+  const row=document.querySelector(`.frow[data-fi="${idx}"]`);
+  if(row){
+    const rTop=row.offsetTop-area.offsetTop;
+    const aScroll=area.scrollTop, aH=area.clientHeight;
+    if(rTop<aScroll) area.scrollTop=rTop-8;
+    else if(rTop+row.offsetHeight>aScroll+aH) area.scrollTop=rTop+row.offsetHeight-aH+8;
+  }
+}
+
+function playFile(idx){
+  if(!usbFiltered[idx])return;
+  const f=usbFiltered[idx], e=fileExt(f.name);
+  const isImg=["jpg","jpeg","png","heic","gif","webp","bmp"].includes(e);
+  const ep=isImg?"view":"play";
+  const label=isImg?"Viendo":"Reproduciendo";
+
+  document.getElementById("np-text").textContent=`${isImg?"🖼":"▶"} ${label}: ${f.name}`;
+  document.getElementById("now-playing").style.display="flex";
+
+  const fd=new FormData();
+  fd.append("file",f.path);
+  fetch(`${API}/${ep}`,{method:"POST",body:fd})
+    .catch(()=>{
+      document.getElementById("np-text").textContent=`⚠ Demo sin Flask → ${f.path}`;
+    });
+}
+
+document.getElementById("np-stop").addEventListener("click",()=>{
+  fetch(`${API}/stop`,{method:"POST"}).catch(()=>{});
+  document.getElementById("now-playing").style.display="none";
+});
+document.getElementById("usb-search").addEventListener("input",applyFilter);
+document.getElementById("s-clear").addEventListener("click",()=>{
+  document.getElementById("usb-search").value="";
+  document.getElementById("usb-search").focus();
+  applyFilter();
+});
+
+/* ══ ABRIR / CERRAR OVERLAYS ═════════════════════════════════════ */
+function openSub(type){
+  scene=type; subSel=0;
+  if(type==="vid-on"){
+    subList=SVC_VIDEO;buildSub("sv-grid",SVC_VIDEO);
+    document.getElementById("ov-video").classList.add("show");
+  } else {
+    subList=SVC_MUSIC;buildSub("sm-grid",SVC_MUSIC);
+    document.getElementById("ov-music").classList.add("show");
+  }
+  applySub();
+}
+
+function openNoUsb(item){
+  scene="no-usb";
+  document.getElementById("nu-ico").textContent=item.icon;
+  document.getElementById("nu-title").textContent=item.label.toUpperCase()+" — SIN DISPOSITIVO";
+  document.getElementById("nu-msg").textContent="No hay USB conectado. Conecta uno e inténtalo de nuevo.";
+  document.getElementById("no-usb").classList.add("show");
+}
+
+function closeAll(){
+  document.querySelectorAll(".ov,#no-usb").forEach(el=>el.classList.remove("show"));
+  document.getElementById("now-playing").style.display="none";
+  scene="main";
+}
+
+/* ══ LAUNCH ══════════════════════════════════════════════════════ */
+function launch(idx){
+  const key=ITEMS[idx].key;
+  if(key==="vid-on"){openSub("vid-on");return;}
+  if(key==="mus-on"){openSub("mus-on");return;}
+  if(!USB.some(u=>u)){openNoUsb(ITEMS[idx]);return;}
+  openUsbOv(idx);
+}
+
+/* ══ TECLADO ═════════════════════════════════════════════════════ */
+document.addEventListener("keydown",e=>{
+  const k=e.key;
+
+  if(scene==="vid-on"||scene==="mus-on"){
+    if(k==="ArrowLeft"){subSel=(subSel-1+subList.length)%subList.length;applySub();}
+    else if(k==="ArrowRight"){subSel=(subSel+1)%subList.length;applySub();}
+    else if(k==="Enter"||k===" "){goSvc();}
+    else if(k==="Escape"||k==="Backspace"){closeAll();}
+    return;
+  }
+
+  if(scene==="usb"){
+    const $s=document.getElementById("usb-search");
+    if(k==="Enter"){e.preventDefault();playFile(fileSel);return;}
+    if(k==="Escape"||(k==="Backspace"&&(!document.activeElement||!$s.value.length))){closeAll();return;}
+    if(k==="ArrowUp"){e.preventDefault();fileSel=Math.max(0,fileSel-1);hlFile(fileSel);}
+    else if(k==="ArrowDown"){e.preventDefault();fileSel=Math.min(usbFiltered.length-1,fileSel+1);hlFile(fileSel);}
+    if(document.activeElement!==document.getElementById("usb-search")&&k.length===1) $s.focus();
+    return;
+  }
+
+  if(scene==="no-usb"){if(k==="Escape"||k==="Backspace")closeAll();return;}
+
+  // Menú principal
+  if(k==="ArrowLeft"){sel=(sel-1+ITEMS.length)%ITEMS.length;setActive(sel);}
+  else if(k==="ArrowRight"){sel=(sel+1)%ITEMS.length;setActive(sel);}
+  else if(k==="Enter"||k===" "){launch(sel);}
+  else if(k==="Escape"){hideToast();}
+  if(k==="u"||k==="U")demoPlug();
+  if(k==="d"||k==="D")demoUnplug();
+});
+
+/* ══ TOAST ═══════════════════════════════════════════════════════ */
+let _tTimer=null;
+const TOAST_MS=6500;
+function showToast({em,title,msg,type="ok"}){
+  clearTimeout(_tTimer);
+  const toast=document.getElementById("toast");
+  toast.className=(type==="err"?"err":"");
+  document.getElementById("t-em").textContent=em;
+  document.getElementById("t-title").textContent=title;
+  document.getElementById("t-msg").textContent=msg;
+  const fill=document.getElementById("t-fill");
+  fill.style.transition="none";fill.style.width="100%";
+  toast.style.display="block";
+  requestAnimationFrame(()=>{
+    fill.style.transition=`width ${TOAST_MS}ms linear`;
+    fill.style.width="0%";
+  });
+  _tTimer=setTimeout(hideToast,TOAST_MS);
+}
+function hideToast(){clearTimeout(_tTimer);document.getElementById("toast").style.display="none";}
+document.getElementById("t-x").addEventListener("click",hideToast);
+
+/* ══ USB STATUS REAL (polling) ═══════════════════════════════════ */
+function refreshBar(){
+  for(let p=0;p<4;p++){
+    const dot=document.getElementById(`ud-${p}`);
+    dot.classList.toggle("on",!!USB[p]);
+    dot.querySelector("span").textContent=USB[p]?`USB ${p+1}: ${USB[p].label}`:`USB ${p+1}`;
+  }
+  const any=USB.some(u=>u);
+  document.querySelectorAll(".card").forEach((c,i)=>{
+    if(ITEMS[i].key.includes("usb")){
+      c.classList.toggle("usb-ok",any);
+      c.querySelector(".card-usb").textContent=any?"USB ✓":"SIN USB";
+    }
+  });
+}
+
+/* Polling real al servidor Flask cada 5 s */
+function pollUsb(){
+  fetch(`${API}/usb/status`)
+    .then(r=>r.json())
+    .then(d=>{
+      let changed=false;
+      d.slots.forEach((s,i)=>{
+        const wasOn=!!USB[i], isOn=s.connected;
+        if(wasOn!==isOn) changed=true;
+        if(isOn&&!wasOn) showToast({em:"🔌",title:"USB CONECTADO",msg:`Puerto ${i+1} · ${s.label}`});
+        if(!isOn&&wasOn) showToast({em:"⏏",title:"USB DESCONECTADO",msg:`Puerto ${i+1} retirado`,type:"err"});
+        USB[i]=isOn?{label:s.label}:false;
+      });
+      if(changed) refreshBar();
+    })
+    .catch(()=>{}); // sin Flask, modo demo silencioso
+}
+pollUsb();
+setInterval(pollUsb,5000);
+
+/* ══ DEMO USB (teclado U / D) ════════════════════════════════════ */
+const _names=["SanDisk 32 GB","Kingston 64 GB","Samsung 128 GB","WD 256 GB"];
+let _ni=0;
+function demoPlug(){
+  for(let p=0;p<4;p++){
+    if(!USB[p]){
+      USB[p]={label:_names[_ni++%_names.length]};
+      refreshBar();
+      showToast({em:"🔌",title:"USB CONECTADO",msg:`Puerto ${p+1} · ${USB[p].label}`});
+      return;
+    }
+  }
+  showToast({em:"⚠",title:"PUERTOS LLENOS",msg:"Los 4 puertos están ocupados.",type:"err"});
+}
+function demoUnplug(){
+  for(let p=3;p>=0;p--){
+    if(USB[p]){
+      const lbl=USB[p].label; USB[p]=false; refreshBar();
+      showToast({em:"⏏",title:"USB DESCONECTADO",msg:`Puerto ${p+1} · ${lbl} retirado`,type:"err"});
+      return;
+    }
+  }
+}
+refreshBar();
+</script>
+</body>
+</html>
