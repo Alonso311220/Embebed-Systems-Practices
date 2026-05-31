@@ -1,0 +1,21 @@
+{
+  "generated": "2026-05-31T06:28:20.327086",
+  "sensor_pin": 18,
+  "protocol": "NEC_EXT",
+  "keymap": {
+    "0x404021": "apagar",
+    "0x404049": "mode_audio",
+    "0x40404A": "mode_image",
+    "0x40404B": "mode_video",
+    "0x404025": "mute",
+    "0x404016": "nav_down",
+    "0x404017": "nav_left",
+    "0x404019": "nav_ok",
+    "0x404018": "nav_right",
+    "0x404015": "nav_up",
+    "0x404048": "prev",
+    "0x40404C": "usb_1",
+    "0x404024": "volume_down",
+    "0x404023": "volume_up"
+  }
+}
