@@ -633,7 +633,9 @@ class SmartTVApp:
             self.mostrar_notificacion(f"{len(videos)} videos detectados. Abriendo menu...", "#cc6600")
             self.abrir_menu_videos(path, videos)
         elif tipo == "audio":
-            self.mostrar_notificacion("Musica detectada en USB (pronto disponible)", "#7700cc")
+            canciones = obtener_canciones(path)
+            self.mostrar_notificacion(f"{len(canciones)} canciones detectadas", "#7700cc")
+            self.abrir_menu_musica(path, canciones)
         elif tipo == "image":
             self.mostrar_notificacion("Imagenes detectadas en USB (pronto disponible)", "#0077cc")
 
