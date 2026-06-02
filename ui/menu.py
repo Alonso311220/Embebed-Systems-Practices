@@ -415,6 +415,18 @@ class SmartTVApp:
                 self.reproduciendo_video = True
                 self.video_player.reproducir_lista([ruta], loop=False)
 
+        elif item["label"] == "Musica":
+            mp = self.usb_conectado or self._detectar_usb_actual()
+            if mp:
+                self.usb_conectado = mp
+                canciones = obtener_canciones(mp)
+                if canciones:
+                    self.abrir_menu_musica(mp,canciones)
+                else:
+                    self.mostrar_notificacion("No se encontraron canciones","#cc3333")
+            else:
+                self.mostrar_notificacion("No hay USB conectado","#cc3333")
+        
         elif self.estado == "SERVICIOS":
             item = self.servicios_items[self.idx_servicio]
             if item["tipo"] == "usb":
