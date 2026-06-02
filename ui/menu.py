@@ -28,6 +28,12 @@ try:
     from media.classifier import classify_usb
 except ImportError as e:
     print(f"\033[31mError modulos media: {e}\033[0m"); sys.exit(1)
+try:
+    from media.videos import obtener_videos, ReproductorVideo
+    from media.musica import obtener_canciones, ReproductorMusica
+    from media.classifier import classify_usb
+except ImportError as e:
+    print(f"\033[31mError modulos media: {e}\033[0m"); sys.exit(1)
 
 try:
     from services.online import GestorOnline, SERVICIOS_VIDEO
