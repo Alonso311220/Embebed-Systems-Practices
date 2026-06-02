@@ -337,6 +337,27 @@ class SmartTVApp:
                      bg=BG, fg=GRAY, font=("Helvetica", 10)).pack(pady=10)
 
     # ══════════════════════════════════════════════════════════════════════
+    #  UI MUSIC USB OVERLAY
+    # ══════════════════════════════════════════════════════════════════════
+    def _abrir_menu_musica(self, path, canciones):
+        self.estado = "MUSICA"
+        self.canciones_rutas = sorted(canciones)
+        self.canciones_usb = ["♪ REPRODUCIR TODO (Bucle)"] + [os.path.basename(c)for c in self.canciones_rutas]
+        self.idx_cancion = 0
+        self._refrescar_menu_musica()
+
+    def _refrescar_menu_musica(self):
+        self.frame_musica.place(relx=0, rely=0, relwidth=1, relheight=1)
+        for w in self.frame_musica.winfo_children():
+            w.destroy()
+            tk.Label(self.frame_musica, text="CONTENIDO MUSICAL DETECTADO", font=("Helvetica",18,"bold"),
+                    bg=BG, fg=GRAY).pack(pady=(30,20))
+        for i, nombre in enumerate(self.canciones_usb):
+            sel = i == self.idx_cancion
+                tk.Label(self.frame_musica, text=nombre, bg=GREEN if sel else BG_SB, fg=WHITE, font=("Helvetica",14,"bold" if sel else "normal"),
+                        anchor="w", padx=20, pady=10).pack(fill=tk.X, padx=80, pady=3)
+    
+    # ══════════════════════════════════════════════════════════════════════
     #  PANTALLA DE VIDEO
     # ══════════════════════════════════════════════════════════════════════
     def _mostrar_video_display(self):
@@ -375,8 +396,7 @@ class SmartTVApp:
             self.idx_video = (self.idx_video + 1) % len(self.videos_usb)
             self._refrescar_menu_videos()
         elif self.estado == "MUSICA":
-            self.idx_cancion = (
-            self.idx_cancion + 1) % len(self.canciones_usb)
+            self.idx_cancion = (self.idx_cancion + 1) % len(self.canciones_usb)
             self._refrescar_menu_musica()
         elif self.estado == "SERVICIOS":
             self.idx_servicio = (self.idx_servicio + 1) % len(self.servicios_items)
