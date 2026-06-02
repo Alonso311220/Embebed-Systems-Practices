@@ -359,6 +359,10 @@ class SmartTVApp:
         elif self.estado == "VIDEOS":
             self.idx_video = (self.idx_video - 1) % len(self.videos_usb)
             self._refrescar_menu_videos()
+        elif self.estado == "MUSICA":
+            self.idx_cancion = (
+            self.idx_cancion - 1) % len(self.canciones_usb)
+            self._refrescar_menu_musica()
         elif self.estado == "SERVICIOS":
             self.idx_servicio = (self.idx_servicio - 1) % len(self.servicios_items)
             self._refrescar_menu_servicios()
