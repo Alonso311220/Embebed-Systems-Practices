@@ -26,7 +26,8 @@ def obtener_canciones(ruta_usb):
 class ReproductorMusica:
 
     def __init__(self):
-        self.instance = vlc.Instance()
+        self.instance = vlc.Instance(['--quiet', '--aout=alsa',
+                                      '--alsa-audio-device=plughw:0,0'])
         self.player = self.instance.media_list_player_new()
 
     def reproducir_lista(self, canciones, loop=True):

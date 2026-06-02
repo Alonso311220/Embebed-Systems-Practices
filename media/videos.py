@@ -16,9 +16,11 @@ def obtener_videos(ruta_montaje):
 
 class ReproductorVideo:
     def __init__(self):
-        # Sin --fullscreen: el video se embebe dentro de un frame de tkinter
-        # para evitar conflictos con el X server en RPi OS Lite + xinit
-        flags = ['--no-video-title-show', '--no-osd', '--quiet', '--aout=alsa']
+        # Sin --fullscreen: el video se embebe dentro de un frame de tkinter.
+        # plughw:0,0 en lugar de "default" — en RPi OS Lite con sudo xinit,
+        # "default" da error 524 (ESTRPIPE); plughw maneja conversión de formato.
+        flags = ['--no-video-title-show', '--no-osd', '--quiet',
+                 '--aout=alsa', '--alsa-audio-device=plughw:0,0']
         self.instancia = vlc.Instance(flags)
         self.reproductor = self.instancia.media_player_new()
         self.lista_reproductor = self.instancia.media_list_player_new()

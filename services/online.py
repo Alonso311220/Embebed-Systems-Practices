@@ -94,8 +94,10 @@ class NavegadorKiosk:
             "--disable-translate",
             "--disable-features=TranslateUI",
             "--autoplay-policy=no-user-gesture-required",
-            "--no-sandbox",        # requerido al correr como root (sudo xinit)
+            "--no-sandbox",              # requerido al correr como root (sudo xinit)
             "--disable-setuid-sandbox",
+            "--disable-background-networking",  # suprime errores D-Bus sin sesión de usuario
+            "--disable-client-side-phishing-detection",
             url,
         ]
         try:
