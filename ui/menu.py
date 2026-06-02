@@ -28,8 +28,8 @@ try:
     from media.classifier import classify_usb
 except ImportError as e:
     print(f"\033[31mError modulos media: {e}\033[0m"); sys.exit(1)
+
 try:
-    from media.videos import obtener_videos, ReproductorVideo
     from media.musica import obtener_canciones, ReproductorMusica
     from media.classifier import classify_usb
 except ImportError as e:
@@ -99,12 +99,21 @@ class SmartTVApp:
         self.usb_conectado   = ""
         self.reproduciendo_video = False  # flag propio para no depender de VLC.is_playing()
 
+        # ── Variables para USB Música
+        self.canciones_usb   = []
+        self.canciones_rutas = []
+        self.idx_cancion     = 0
+        self.ruta_usb        = ""
+        self.usb_conectado   = ""
+         self.reproduciendo_musica = False  # flag propio para no depender de VLC.is_playing()
+        
         # ── Variables para Servicios Online
         self.servicios_items = []  # lista de dicts con info de cada servicio
         self.idx_servicio    = 0
 
         # ── Reproductor de Video y Gestor Online
         self.video_player  = ReproductorVideo()
+        self.audio_player  = ReproductorMusica()
         self.gestor_online = GestorOnline()
 
         self._build_ui()
