@@ -16,21 +16,33 @@ def obtener_videos(ruta_montaje):
 
 class ReproductorVideo:
     def __init__(self):
-        # Flags optimizados para RPi con fix de audio
-        flags = ['--fullscreen', '--no-video-title-show', '--no-osd', '--quiet', '--aout=alsa']
+        # Sin --fullscreen: el video se embebe dentro de un frame de tkinter
+        # para evitar conflictos con el X server en RPi OS Lite + xinit
+        flags = ['--no-video-title-show', '--no-osd', '--quiet', '--aout=alsa']
         self.instancia = vlc.Instance(flags)
         self.reproductor = self.instancia.media_player_new()
         self.lista_reproductor = self.instancia.media_list_player_new()
         self.lista_reproductor.set_media_player(self.reproductor)
+        self._xwin = 0  # X11 Window ID del frame de tkinter
+
+    def set_ventana(self, win_id):
+        """Vincula el reproductor a un frame de tkinter (X11 Window ID).
+        Llamar una vez despues de que la ventana tkinter este visible.
+        """
+        self._xwin = win_id
+        self.reproductor.set_xwindow(win_id)
 
     def reproducir_lista(self, lista_rutas, loop=False):
-        """Reproduce los videos uno tras otro. Con loop=True repite en bucle."""
+        """Reproduce los videos dentro del frame tkinter vinculado."""
         self.lista_reproductor.stop()
         media_list = self.instancia.media_list_new()
         for ruta in lista_rutas:
             media_list.add_media(self.instancia.media_new(ruta))
 
         self.lista_reproductor.set_media_list(media_list)
+        # Re-vincular la ventana antes de reproducir (necesario tras stop)
+        if self._xwin:
+            self.reproductor.set_xwindow(self._xwin)
         if loop:
             self.lista_reproductor.set_playback_mode(vlc.PlaybackMode.loop)
         else:

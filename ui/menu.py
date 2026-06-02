@@ -4,6 +4,12 @@ import tkinter as tk
 import subprocess as sp
 from pathlib import Path
 
+# Fix para RPi OS Lite con xinit: VLC y PulseAudio requieren XDG_RUNTIME_DIR
+if not os.environ.get('XDG_RUNTIME_DIR'):
+    _rtdir = f'/tmp/runtime-{os.getuid()}'
+    os.makedirs(_rtdir, mode=0o700, exist_ok=True)
+    os.environ['XDG_RUNTIME_DIR'] = _rtdir
+
 #Ruta para importar los modulos /home/pi/ProyectoFinal
 sys.path.append(str(Path(__file__).parent.parent))
 
@@ -22,6 +28,11 @@ try:
     from media.classifier import classify_usb
 except ImportError as e:
     print(f"\033[31mError modulos media: {e}\033[0m"); sys.exit(1)
+
+try:
+    from services.online import GestorOnline, SERVICIOS_VIDEO
+except ImportError as e:
+    print(f"\033[31mError modulos online: {e}\033[0m"); sys.exit(1)
 
 # PIL para cargar iconos PNG; si no está instalado se usan caracteres de texto
 try:
@@ -46,7 +57,7 @@ LGRAY   = "#cccccc"
 # "icon": nombre de archivo en assets/icons/ (PNG cargado con PIL)
 # "char": caracter de respaldo si PIL no está disponible, y para el panel de detalle grande
 ITEMS = [
-    {"label": "Peliculas",     "icon": "monitor-de-television.png", "char": "▶", "desc": "Reproducir videos desde USB"},
+    {"label": "Servicio Online",     "icon": "monitor-de-television.png", "char": "▶", "desc": "Reproducir videos desde USB"},
     {"label": "Musica",        "icon": "musica.png",                "char": "♪", "desc": "Reproducir audio desde USB"},
     {"label": "Videos",        "icon": "video.png",                 "char": "◉", "desc": "Contenido multimedia local"},
     {"label": "Configuracion", "icon": "configuracion-web.png",     "char": "⚙", "desc": "Ajustes del sistema"},
@@ -75,16 +86,26 @@ class SmartTVApp:
         self._notif_job = None
         
         # ── Variables para USB Videos
-        self.videos_usb   = []   # nombres de archivo (para mostrar en pantalla)
-        self.videos_rutas = []   # rutas completas (para reproducir)
-        self.idx_video    = 0
-        self.ruta_usb     = ""
-        self.usb_conectado = ""  # mount point del USB activo ("" si ninguno)
+        self.videos_usb      = []
+        self.videos_rutas    = []
+        self.idx_video       = 0
+        self.ruta_usb        = ""
+        self.usb_conectado   = ""
+        self.reproduciendo_video = False  # flag propio para no depender de VLC.is_playing()
 
-        # ── Reproductor de Video (usa media/videos.py)
-        self.video_player = ReproductorVideo()
+        # ── Variables para Servicios Online
+        self.servicios_items = []  # lista de dicts con info de cada servicio
+        self.idx_servicio    = 0
+
+        # ── Reproductor de Video y Gestor Online
+        self.video_player  = ReproductorVideo()
+        self.gestor_online = GestorOnline()
 
         self._build_ui()
+
+        # Forzar que tkinter registre el frame con X11 antes de pasarle el ID a VLC
+        self.root.update_idletasks()
+        self.video_player.set_ventana(self.video_display.winfo_id())
 
         # ── Control Remoto
         self.ir = IRInput()
@@ -147,6 +168,13 @@ class SmartTVApp:
         
         # ── Contenedor Overlay para Lista de Videos (Inicialmente Oculto)
         self.frame_videos = tk.Frame(self.body, bg=BG)
+
+        # ── Contenedor Overlay para Servicios Online (Inicialmente Oculto)
+        self.frame_servicios = tk.Frame(self.body, bg=BG)
+
+        # ── Pantalla negra donde VLC renderiza el video (cubre toda la app)
+        # Ocupa la ventana raíz (no self.body) para tapar header y footer también
+        self.video_display = tk.Frame(self.root, bg='black')
 
         # Notificación
         self._notif = tk.Label(self.root, text="", font=("Helvetica", 12, "bold"),
@@ -268,7 +296,7 @@ class SmartTVApp:
         # Limpiar widgets anteriores
         for w in self.frame_videos.winfo_children(): w.destroy()
 
-        tk.Label(self.frame_videos, text="🍿 CONTENIDO DE VIDEO DETECTADO", 
+        tk.Label(self.frame_videos, text="CONTENIDO DE VIDEO DETECTADO", 
                  font=("Helvetica", 18, "bold"), bg=BG, fg=GRAY).pack(pady=(30, 20))
 
         # Paginación (Para no saturar la pantalla si hay muchos videos)
@@ -292,6 +320,19 @@ class SmartTVApp:
                      bg=BG, fg=GRAY, font=("Helvetica", 10)).pack(pady=10)
 
     # ══════════════════════════════════════════════════════════════════════
+    #  PANTALLA DE VIDEO
+    # ══════════════════════════════════════════════════════════════════════
+    def _mostrar_video_display(self):
+        """Despliega el frame negro sobre toda la ventana para que VLC renderice."""
+        self.video_display.place(relx=0, rely=0, relwidth=1, relheight=1)
+        self.video_display.lift()
+        self.root.update_idletasks()  # X11 debe registrar la ventana antes de que VLC la use
+
+    def _ocultar_video_display(self):
+        """Oculta el frame de video y devuelve el control al menú."""
+        self.video_display.place_forget()
+
+    # ══════════════════════════════════════════════════════════════════════
     #  NAVEGACIÓN MULTI-ESTADO
     # ══════════════════════════════════════════════════════════════════════
     def ir_subir(self):
@@ -301,6 +342,9 @@ class SmartTVApp:
         elif self.estado == "VIDEOS":
             self.idx_video = (self.idx_video - 1) % len(self.videos_usb)
             self._refrescar_menu_videos()
+        elif self.estado == "SERVICIOS":
+            self.idx_servicio = (self.idx_servicio - 1) % len(self.servicios_items)
+            self._refrescar_menu_servicios()
 
     def ir_bajar(self):
         if self.estado == "PRINCIPAL":
@@ -309,14 +353,20 @@ class SmartTVApp:
         elif self.estado == "VIDEOS":
             self.idx_video = (self.idx_video + 1) % len(self.videos_usb)
             self._refrescar_menu_videos()
+        elif self.estado == "SERVICIOS":
+            self.idx_servicio = (self.idx_servicio + 1) % len(self.servicios_items)
+            self._refrescar_menu_servicios()
 
     def ir_seleccionar(self):
         if self.estado == "PRINCIPAL":
             item = ITEMS[self.idx]
             if "Salir" in item["label"]:
                 self.cerrar_aplicacion()
-            elif item["label"] in ("Peliculas", "Videos"):
-                # Verificar si hay USB conectado
+            elif item["label"] == "Peliculas":
+                # Peliculas → submenú de servicios online + opción USB
+                self.abrir_menu_servicios()
+            elif item["label"] == "Videos":
+                # Videos → solo contenido USB
                 mp = self.usb_conectado or self._detectar_usb_actual()
                 if mp:
                     self.usb_conectado = mp
@@ -325,30 +375,63 @@ class SmartTVApp:
                     self.mostrar_notificacion("No hay USB conectado", "#cc3333")
             else:
                 self.mostrar_notificacion(f"Abriendo: {item['label']}", GREEN)
-        
+
         elif self.estado == "VIDEOS":
             if self.idx_video == 0:
-                # Modo Presentación: reproduce todos en bucle
                 self.mostrar_notificacion("Iniciando Presentacion de Videos...", GREEN)
+                self._mostrar_video_display()
+                self.reproduciendo_video = True
                 self.video_player.reproducir_lista(self.videos_rutas, loop=True)
             else:
-                # Pelicula individual
                 nombre = self.videos_usb[self.idx_video]
                 ruta   = self.videos_rutas[self.idx_video - 1]
                 self.mostrar_notificacion(f"Reproduciendo: {nombre}", GREEN)
+                self._mostrar_video_display()
+                self.reproduciendo_video = True
                 self.video_player.reproducir_lista([ruta], loop=False)
 
-    def ir_regresar(self):
-        # 1. Si hay reproducción activa, la detenemos
-        if self.video_player.lista_reproductor.is_playing() or self.video_player.reproductor.is_playing():
-            self.video_player.detener()
-            self.mostrar_notificacion("Reproduccion detenida", "#228833")
-            return  # Nos quedamos en el menu actual
+        elif self.estado == "SERVICIOS":
+            item = self.servicios_items[self.idx_servicio]
+            if item["tipo"] == "usb":
+                # Opción "Desde USB" al final de la lista
+                mp = self.usb_conectado or self._detectar_usb_actual()
+                if mp:
+                    self.usb_conectado = mp
+                    self.frame_servicios.place_forget()
+                    self.estado = "PRINCIPAL"
+                    self.analizar_y_reproducir_usb(mp)
+                else:
+                    self.mostrar_notificacion("No hay USB conectado", "#cc3333")
+            else:
+                # Servicio de streaming: verificar internet y abrir Chromium
+                ok, msg = self.gestor_online.abrir_streaming_video(item["key"])
+                color = item["color"] if ok else "#cc3333"
+                self.mostrar_notificacion(msg, color)
 
-        # 2. Si no hay reproducción y estamos en el sub-menú, cerramos el sub-menú
+    def ir_regresar(self):
+        # 1. Si hay video reproduciéndose, detenerlo (usamos flag propio, no is_playing())
+        if self.reproduciendo_video:
+            self.video_player.detener()
+            self.reproduciendo_video = False
+            self._ocultar_video_display()
+            self.mostrar_notificacion("Reproduccion detenida", "#228833")
+            return  # volvemos al menu de videos
+
+        # 2. Si Chromium está abierto, cerrarlo
+        if self.gestor_online.navegador_abierto():
+            self.gestor_online.cerrar_navegador()
+            self.mostrar_notificacion("Servicio cerrado", "#228833")
+            return  # volvemos al menu de servicios
+
+        # 3. Cerrar sub-menús y volver al menú principal
         if self.estado == "VIDEOS":
             self.estado = "PRINCIPAL"
             self.frame_videos.place_forget()
+            self._ocultar_video_display()  # por si el video terminó solo
+            self.mostrar_notificacion("Regresando al menu principal", "#228833")
+        elif self.estado == "SERVICIOS":
+            self.estado = "PRINCIPAL"
+            self.frame_servicios.place_forget()
             self.mostrar_notificacion("Regresando al menu principal", "#228833")
 
     def ir_apagar_sistema(self):
@@ -370,6 +453,62 @@ class SmartTVApp:
     def _ocultar_notif(self):
         self._notif.place_forget()
         self._notif_job = None
+
+    # ══════════════════════════════════════════════════════════════════════
+    #  SERVICIOS ONLINE
+    # ══════════════════════════════════════════════════════════════════════
+    def abrir_menu_servicios(self):
+        """Construye la lista de servicios y muestra el overlay."""
+        self.estado = "SERVICIOS"
+        # Construir lista: servicios de video + opción USB al final
+        self.servicios_items = [
+            {"tipo": "servicio", "key": k, **v}
+            for k, v in SERVICIOS_VIDEO.items()
+        ]
+        self.servicios_items.append({
+            "tipo":  "usb",
+            "key":   "usb",
+            "label": "Reproducir desde USB",
+            "char":  "◉",
+            "color": GREEN,
+        })
+        self.idx_servicio = 0
+        self._refrescar_menu_servicios()
+
+    def _refrescar_menu_servicios(self):
+        """Renderiza la lista de servicios sobre el cuerpo principal."""
+        self.frame_servicios.place(relx=0, rely=0, relwidth=1, relheight=1)
+        for w in self.frame_servicios.winfo_children():
+            w.destroy()
+
+        tk.Label(self.frame_servicios, text="PELICULAS — Elige tu servicio",
+                 font=("Helvetica", 18, "bold"), bg=BG, fg=GRAY).pack(pady=(30, 6))
+
+        # Indicador de conexión a internet
+        hay_net = self.gestor_online.hay_internet()
+        net_txt = "Internet: CONECTADO" if hay_net else "Internet: SIN CONEXION"
+        net_col = "#09e55d"            if hay_net else "#cc3333"
+        tk.Label(self.frame_servicios, text=net_txt,
+                 font=("Helvetica", 10), bg=BG, fg=net_col).pack(pady=(0, 18))
+
+        for i, item in enumerate(self.servicios_items):
+            sel      = (i == self.idx_servicio)
+            bg_color = item["color"] if sel else BG_SB
+            fg_color = WHITE
+            font_w   = "bold" if sel else "normal"
+            padx_val = 14
+
+            # Fila: carácter + label
+            fila = tk.Frame(self.frame_servicios, bg=bg_color)
+            fila.pack(fill=tk.X, padx=100, pady=3)
+            tk.Label(fila, text=item["char"], font=("Helvetica", 15, "bold"),
+                     bg=bg_color, fg=fg_color, width=3, pady=10).pack(side=tk.LEFT, padx=padx_val)
+            tk.Label(fila, text=item["label"], font=("Helvetica", 14, font_w),
+                     bg=bg_color, fg=fg_color, anchor="w", pady=10).pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        tk.Label(self.frame_servicios,
+                 text="OK = Abrir   |   PREV = Regresar",
+                 font=("Helvetica", 9), bg=BG, fg=GRAY).pack(pady=(16, 0))
 
     # ══════════════════════════════════════════════════════════════════════
     #  USB
