@@ -400,6 +400,20 @@ class SmartTVApp:
                     self.mostrar_notificacion("No hay USB conectado", "#cc3333")
             else:
                 self.mostrar_notificacion(f"Abriendo: {item['label']}", GREEN)
+            
+            elif item["label"] == "Musica":
+                mp = self.usb_conectado or self._detectar_usb_actual()
+                if mp:
+                    self.usb_conectado = mp
+                    canciones = obtener_canciones(mp)
+                    if canciones:
+                        self.abrir_menu_musica(mp,canciones)
+                    else:
+                        self.mostrar_notificacion("No se encontraron canciones","#cc3333")
+                else:
+                    self.mostrar_notificacion("No hay USB conectado","#cc3333")
+            else:
+                self.mostrar_notificacion(f"Abriendo: {item['label']}", GREEN)
 
         elif self.estado == "VIDEOS":
             if self.idx_video == 0:
@@ -415,17 +429,15 @@ class SmartTVApp:
                 self.reproduciendo_video = True
                 self.video_player.reproducir_lista([ruta], loop=False)
 
-        elif item["label"] == "Musica":
-            mp = self.usb_conectado or self._detectar_usb_actual()
-            if mp:
-                self.usb_conectado = mp
-                canciones = obtener_canciones(mp)
-                if canciones:
-                    self.abrir_menu_musica(mp,canciones)
-                else:
-                    self.mostrar_notificacion("No se encontraron canciones","#cc3333")
+        elif self.estado == "MUSICA":
+            if self.idx_cancion == 0:
+                self.audio_player.reproducir_lista(self.canciones_rutas,loop=True)
+                self.mostrar_notificacion("Reproduciendo toda la musica", GREEN)
+
             else:
-                self.mostrar_notificacion("No hay USB conectado","#cc3333")
+                ruta = self.canciones_rutas[self.idx_cancion - 1]
+                self.audio_player.reproducir_lista([ruta],loop=False)
+                self.mostrar_notificacion(f"Reproduciendo {os.path.basename(ruta)}", GREEN)
         
         elif self.estado == "SERVICIOS":
             item = self.servicios_items[self.idx_servicio]
@@ -465,6 +477,11 @@ class SmartTVApp:
             self.estado = "PRINCIPAL"
             self.frame_videos.place_forget()
             self._ocultar_video_display()  # por si el video terminó solo
+            self.mostrar_notificacion("Regresando al menu principal", "#228833")
+        elif self.estado == "MUSICA":
+            self.estado = "PRINCIPAL"
+            self.frame_musica.place_forget()
+            self.audio_player.detener()
             self.mostrar_notificacion("Regresando al menu principal", "#228833")
         elif self.estado == "SERVICIOS":
             self.estado = "PRINCIPAL"
