@@ -184,6 +184,8 @@ class SmartTVApp:
         # ── Contenedor Overlay para Lista de Videos (Inicialmente Oculto)
         self.frame_videos = tk.Frame(self.body, bg=BG)
 
+        self.frame_musica = tk.Frame(self.body, bg=BG)
+        
         # ── Contenedor Overlay para Servicios Online (Inicialmente Oculto)
         self.frame_servicios = tk.Frame(self.body, bg=BG)
 
