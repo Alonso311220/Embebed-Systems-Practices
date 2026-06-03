@@ -921,7 +921,36 @@ class SmartTVApp:
                     self.root.after(0, lambda m=mp: self.analizar_y_reproducir_usb(m))
             elif device.action == "remove":
                 self.usb_conectado = ""
-                self.root.after(0, lambda: self.mostrar_notificacion("USB desconectado", "#cc3333"))
+                self.root.after(0, self._on_usb_remove)
+
+    def _on_usb_remove(self):
+        """Detiene toda reproducción USB activa y regresa al menú principal."""
+        if self.reproduciendo_video:
+            self.video_player.detener()
+            self.reproduciendo_video = False
+            self._ocultar_video_display()
+        if self.reproduciendo_imagenes:
+            self.imagen_player.detener()
+            self.reproduciendo_imagenes = False
+            self._ocultar_video_display()
+        if self.reproduciendo_musica:
+            self.audio_player.detener()
+            self.reproduciendo_musica = False
+
+        for frame in (self.frame_videos, self.frame_musica):
+            frame.place_forget()
+
+        self.estado          = "PRINCIPAL"
+        self.idx_video       = 0
+        self.idx_cancion     = 0
+        self.videos_usb      = []
+        self.videos_rutas    = []
+        self.canciones_usb   = []
+        self.canciones_rutas = []
+
+        self._refrescar_sidebar()
+        self._refrescar_detalle()
+        self.mostrar_notificacion("USB desconectado", "#cc3333")
 
     def _detectar_usb_actual(self):
         """Lee /proc/mounts buscando particiones USB (/dev/sd*). Solo funciona en Linux/RPi."""

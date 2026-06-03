@@ -19,7 +19,7 @@ def obtener_imagenes(ruta_montaje):
 class ReproductorImagenes:
     def __init__(self):
         # --image-duration: segundos por foto; plughw:0,0 evita error 524 de ALSA en RPi
-        flags = ['--no-osd', '--quiet', '--image-duration=5'] + AUDIO_FLAGS
+        flags = ['--no-osd', '--quiet', '--image-duration=1.5'] + AUDIO_FLAGS
         self.instancia = vlc.Instance(flags)
         self.reproductor = self.instancia.media_player_new()
         self.lista_reproductor = self.instancia.media_list_player_new()
