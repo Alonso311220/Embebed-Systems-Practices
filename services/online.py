@@ -83,31 +83,49 @@ class NavegadorKiosk:
     def __init__(self):
         self._proc: subprocess.Popen | None = None
 
+    # Detectar si dbus-run-session está disponible (solo una vez al importar)
+    _DBUS_RUN = bool(subprocess.run(
+        ["which", "dbus-run-session"], capture_output=True
+    ).returncode == 0)
+
     def abrir(self, url: str):
         self.cerrar()
-        cmd = [
+        chromium_args = [
             "chromium-browser",
             "--kiosk",
+            "--start-fullscreen",
             "--noerrdialogs",
             "--disable-infobars",
             "--no-first-run",
             "--disable-translate",
             "--disable-features=TranslateUI",
             "--autoplay-policy=no-user-gesture-required",
-            "--no-sandbox",              # requerido al correr como root (sudo xinit)
+            "--no-sandbox",             # requerido al correr como root (sudo xinit)
             "--disable-setuid-sandbox",
-            "--disable-background-networking",  # suprime errores D-Bus sin sesión de usuario
+            "--disable-background-networking",
             "--disable-client-side-phishing-detection",
+            "--disable-gpu",            # SwiftShader: evita errores GL en RPi
+            "--disable-gpu-compositing",
+            "--disable-dev-shm-usage",  # /dev/shm pequeño en RPi
             url,
         ]
+        # dbus-run-session crea un bus D-Bus de sesión propio para Chromium,
+        # eliminando todos los errores "Failed to connect to the bus".
+        cmd = (["dbus-run-session", "--"] + chromium_args
+               if self._DBUS_RUN else chromium_args)
         try:
-            self._proc = subprocess.Popen(cmd)
+            # stderr=DEVNULL: silencia cualquier mensaje de log restante de Chromium
+            self._proc = subprocess.Popen(cmd, stderr=subprocess.DEVNULL)
             log.info("Chromium abierto: %s", url)
         except FileNotFoundError:
             log.error("chromium-browser no encontrado. Instala con: sudo apt install chromium-browser")
 
     def esta_abierto(self) -> bool:
         return self._proc is not None and self._proc.poll() is None
+
+    def get_pid(self) -> int | None:
+        """Devuelve el PID del proceso lanzado (dbus-run-session o chromium directo)."""
+        return self._proc.pid if self._proc else None
 
     def cerrar(self):
         if self._proc and self._proc.poll() is None:
@@ -362,6 +380,9 @@ class GestorOnline:
 
     def navegador_abierto(self) -> bool:
         return self.navegador.esta_abierto()
+
+    def get_pid_navegador(self) -> int | None:
+        return self.navegador.get_pid()
 
     # ── WiFi helpers (re-expuestos para simplificar imports) ───────────────
 

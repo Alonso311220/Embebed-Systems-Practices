@@ -1,8 +1,7 @@
 # media/videos.py
 import os
 import vlc  # pip install python-vlc
-
-VIDEO_EXT = {'.mp4', '.mkv', '.avi', '.mov', '.m4v', '.wmv'}
+from media.classifier import AUDIO_FLAGS, VIDEO_EXT
 
 def obtener_videos(ruta_montaje):
     """Escanea el USB y devuelve una lista con las rutas de los videos."""
@@ -19,8 +18,7 @@ class ReproductorVideo:
         # Sin --fullscreen: el video se embebe dentro de un frame de tkinter.
         # plughw:0,0 en lugar de "default" — en RPi OS Lite con sudo xinit,
         # "default" da error 524 (ESTRPIPE); plughw maneja conversión de formato.
-        flags = ['--no-video-title-show', '--no-osd', '--quiet',
-                 '--aout=alsa', '--alsa-audio-device=plughw:0,0']
+        flags = ['--no-video-title-show', '--no-osd', '--quiet'] + AUDIO_FLAGS
         self.instancia = vlc.Instance(flags)
         self.reproductor = self.instancia.media_player_new()
         self.lista_reproductor = self.instancia.media_list_player_new()

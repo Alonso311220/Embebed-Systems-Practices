@@ -65,6 +65,7 @@ class IRInput:
         self._running   = False
         self._last_code = ""
         self._last_time = 0.0
+        self._hold_count: int = 0   # repeticiones consecutivas de la misma tecla
 
         self._load_keymap(keymap_path)
 
@@ -211,13 +212,21 @@ class IRInput:
             try:
                 code = self._decode_nec()
                 if code is None:
-                    # Sin señal o trama inválida — pequeña pausa para no saturar CPU
                     time.sleep(0.001)
                 elif code == "REPEAT":
-                    # Repetición de la última tecla mantenida: ignorar
-                    # (el rate de repetición ya está controlado por repeat_gap en _process)
+                    # Re-disparar el último handler para soportar tecla mantenida.
+                    # _hold_count permite a los listeners escalar la velocidad.
+                    self._hold_count += 1
+                    action = self._keymap.get(self._last_code)
+                    if action:
+                        for cb in self._handlers.get(action, []):
+                            try:
+                                cb()
+                            except Exception as e:
+                                log.error("Handler REPEAT '%s' error: %s", action, e)
                     time.sleep(0.001)
                 else:
+                    self._hold_count = 0
                     self._process(code)
             except Exception as e:
                 log.error("Loop IR error: %s", e)

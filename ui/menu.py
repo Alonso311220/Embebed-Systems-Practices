@@ -5,11 +5,28 @@ import tkinter as tk # Asignación de un alias para interfaz gráfica
 import subprocess as sp #Modulo para ejecutar comandos del sistema operativo para manejo de USBs
 from pathlib import Path #Para rutas de archivos
 
-# Fix para RPi OS Lite con xinit: VLC y PulseAudio requieren XDG_RUNTIME_DIR
-if not os.environ.get('XDG_RUNTIME_DIR'): 
-    _rtdir = f'/tmp/runtime-{os.getuid()}' # Dirección temporal para runtime para evitar problemas con el audio y vlc
-    os.makedirs(_rtdir, mode=0o700, exist_ok=True) # Crear directorio si no existe, con permisos seguros
-    os.environ['XDG_RUNTIME_DIR'] = _rtdir # Establece la variable de entorno para el runtime de XDG
+# Fix 1 — XDG_RUNTIME_DIR: requerido por VLC, PulseAudio y D-Bus bajo sudo xinit
+if not os.environ.get('XDG_RUNTIME_DIR'):
+    _rtdir = f'/tmp/runtime-{os.getuid()}'
+    os.makedirs(_rtdir, mode=0o700, exist_ok=True)
+    os.environ['XDG_RUNTIME_DIR'] = _rtdir
+
+# Fix 2 — D-Bus session: Chromium necesita DBUS_SESSION_BUS_ADDRESS para funcionar
+# correctamente. Sin esto, llena la consola de errores "Failed to connect to the bus"
+# y algunos atajos de teclado / xdotool no funcionan bien.
+if not os.environ.get('DBUS_SESSION_BUS_ADDRESS'):
+    try:
+        _dbus = sp.run(
+            ['dbus-launch', '--sh-syntax'],
+            capture_output=True, text=True, timeout=4
+        )
+        for _line in _dbus.stdout.splitlines():
+            if '=' in _line:
+                _key, _, _val = _line.partition('=')
+                os.environ[_key.strip()] = _val.strip().rstrip(';').strip("'")\
+                                               .strip('"')
+    except Exception:
+        pass  # si dbus-launch no está disponible, continúa sin él
 
 #Ruta para importar los modulos que se encuentran en /home/pi/ProyectoFinal
 sys.path.append(str(Path(__file__).parent.parent))
@@ -20,7 +37,8 @@ except ImportError as e:
     print(f"\033[31mFaltan dependencias: {e}\033[0m"); sys.exit(1)
 
 try:
-    from remote.input import IRInput # Maneja el control remoto al detectar las señales infrarrojas
+    from remote.input import IRInput
+    from remote.teclado_virtual import TecladoVirtual
 except ImportError as e:
     print(f"\033[31mError remote.input: {e}\033[0m"); sys.exit(1)
 
@@ -60,6 +78,8 @@ GREEN2    = "#0fb207"
 WHITE   = "#ffffff"
 GRAY    = "#888888"
 LGRAY   = "#cccccc"
+
+MOUSE_STEP = 50   # píxeles que mueve el cursor por cada pulsación del control
 
 # "icon": nombre de archivo en assets/icons/ (PNG cargado con PIL)
 # "char": caracter de respaldo si PIL no está disponible, y para el panel de detalle grande
@@ -113,15 +133,18 @@ class SmartTVApp:
         self.usb_conectado = ""
 
         # --- Variables para Servicios Online
-        self.servicios_items = []
-        self.idx_servicio    = 0
-        self._internet_ok    = False  # cache del estado de internet (se verifica en hilo)
+        self.servicios_items  = []
+        self.idx_servicio     = 0
+        self._internet_ok     = False
+        self.streaming_activo = False  # True mientras Chromium está abierto
+        self._chromium_wid    = ""    # ID de ventana X11 de Chromium (para xdotool)
 
-        # --- Reproductores y Gestor Online
+        # --- Reproductores, Gestor Online y Teclado Virtual
         self.video_player  = ReproductorVideo()
         self.audio_player  = ReproductorMusica()
         self.imagen_player = ReproductorImagenes()
         self.gestor_online = GestorOnline()
+        self.teclado       = TecladoVirtual()   # teclado kernel-level para streaming
 
         self._build_ui()
 
@@ -131,13 +154,26 @@ class SmartTVApp:
         self.video_player.set_ventana(_wid)   # videos
         self.imagen_player.set_ventana(_wid)  # fotos (mismo frame, usan uno a la vez)
 
+        # Garantizar volumen audible al arrancar (por si amixer del script no alcanzó)
+        for _ctrl in ("Master", "PCM", "Speaker", "Headphone"):
+            sp.run(["amixer", "-q", "sset", _ctrl, "90%", "unmute"],
+                   capture_output=True)
+
         # --- Control Remoto
         self.ir = IRInput()
-        self.ir.on("nav_up",   lambda: self.root.after(0, self.ir_subir))
-        self.ir.on("nav_down", lambda: self.root.after(0, self.ir_bajar))
-        self.ir.on("nav_ok",   lambda: self.root.after(0, self.ir_seleccionar))
-        self.ir.on("prev",     lambda: self.root.after(0, self.ir_regresar))
-        self.ir.on("apagar",   lambda: self.root.after(0, self.ir_apagar_sistema))
+        self.ir.on("nav_up",      lambda: self.root.after(0, self.ir_subir))
+        self.ir.on("nav_down",    lambda: self.root.after(0, self.ir_bajar))
+        self.ir.on("nav_left",    lambda: self.root.after(0, self.ir_izquierda))
+        self.ir.on("nav_right",   lambda: self.root.after(0, self.ir_derecha))
+        self.ir.on("nav_ok",      lambda: self.root.after(0, self.ir_seleccionar))
+        self.ir.on("prev",        lambda: self.root.after(0, self.ir_regresar))
+        self.ir.on("apagar",      lambda: self.root.after(0, self.ir_apagar_sistema))
+        self.ir.on("volume_up",   lambda: self.root.after(0, self.ir_vol_subir))
+        self.ir.on("volume_down", lambda: self.root.after(0, self.ir_vol_bajar))
+        self.ir.on("mute",        lambda: self.root.after(0, self.ir_mute))
+        self.ir.on("sidebar_up",  lambda: self.root.after(0, self.ir_sidebar_subir))
+        self.ir.on("sidebar_down",lambda: self.root.after(0, self.ir_sidebar_bajar))
+        self.ir.on("reset",       lambda: self.root.after(0, self.ir_reiniciar))
         self.ir.start()
 
         # Detectar silenciosamente si ya hay un USB conectado antes de arrancar
@@ -318,7 +354,8 @@ class SmartTVApp:
     def _refrescar_menu_videos(self):
         """Renderiza la lista de videos sobre el cuerpo principal, con paginación."""
         self.frame_videos.place(relx=0, rely=0, relwidth=1, relheight=1)
-        
+        self.frame_videos.lift()
+
         # Limpiar widgets anteriores
         for w in self.frame_videos.winfo_children(): w.destroy()
 
@@ -348,7 +385,7 @@ class SmartTVApp:
     # ======================================
     #  UI MUSIC USB OVERLAY
     # ======================================
-    def _abrir_menu_musica(self, path, canciones):
+    def _abrir_menu_musica(self, canciones):
         self.estado = "MUSICA"
         self.canciones_rutas = sorted(canciones)
         self.canciones_usb = ["♪ REPRODUCIR TODO (Bucle)"] + [os.path.basename(c)for c in self.canciones_rutas]
@@ -378,6 +415,115 @@ class SmartTVApp:
     # ======================================
     #  PANTALLA DE VIDEO
     # ======================================
+    def _buscar_wid_chromium(self) -> str:
+        """Busca el Window ID de Chromium con 3 estrategias de fallback.
+        Retorna el WID como string, o "" si no se encontró.
+        """
+        # Estrategia 1: por clase X11 (más común)
+        for clase in ("chromium", "Chromium", "chromium-browser"):
+            r = sp.run(["xdotool", "search", "--onlyvisible", "--class", clase],
+                       capture_output=True, text=True)
+            wids = [w for w in r.stdout.strip().splitlines() if w]
+            if wids:
+                return wids[-1]
+
+        # Estrategia 2: por PID real de chromium-browser
+        r = sp.run(["pgrep", "-n", "-f", "chromium-browser"],
+                   capture_output=True, text=True)
+        pid = r.stdout.strip()
+        if pid:
+            r2 = sp.run(["xdotool", "search", "--onlyvisible", "--pid", pid],
+                        capture_output=True, text=True)
+            wids = [w for w in r2.stdout.strip().splitlines() if w]
+            if wids:
+                return wids[-1]
+
+        return ""
+
+    def _modo_streaming_inicio(self):
+        """Busca la ventana de Chromium y le da foco X11 ANTES de ocultar
+        tkinter — sin este orden el foco queda en el aire y las teclas
+        del control no llegan a ningún lado.
+        Reintenta cada 400ms hasta encontrar la ventana.
+        """
+        if not self.streaming_activo:
+            return
+        wid = self._buscar_wid_chromium()
+        if wid:
+            self._chromium_wid = wid
+            # Obtener resolución real de pantalla
+            rg = sp.run(["xdotool", "getdisplaygeometry"],
+                        capture_output=True, text=True)
+            try:
+                scr_w, scr_h = map(int, rg.stdout.split())
+            except Exception:
+                scr_w, scr_h = 1920, 1080
+            # windowfocus (NO windowactivate) — solo cambia el foco sin
+            # tocar la geometría de la ventana (windowactivate puede
+            # sacar a Chromium de kiosk/fullscreen en algunos sistemas)
+            sp.run(["xdotool", "windowfocus", "--sync", self._chromium_wid],
+                   capture_output=True)
+            # Forzar posición y tamaño a pantalla completa por si kiosk
+            # no tomó las dimensiones correctas en este entorno
+            sp.run(["xdotool", "windowmove", "--sync",
+                    self._chromium_wid, "0", "0"], capture_output=True)
+            sp.run(["xdotool", "windowsize", "--sync",
+                    self._chromium_wid, str(scr_w), str(scr_h)],
+                   capture_output=True)
+            # Ocultar tkinter DESPUÉS de que Chromium tiene el foco
+            self.root.withdraw()
+        else:
+            self.root.after(400, self._modo_streaming_inicio)
+
+    def _tecla_chromium(self, tecla: str):
+        """Envía una tecla a Chromium asegurando que tiene el foco X11.
+        Usa uinput (kernel-level) si está disponible, xdotool como fallback.
+        IMPORTANTE: NO usar xdotool --window, eso usa XSendEvent que Chromium
+        puede rechazar. Sin --window usa XTestFakeKeyEvent (más compatible).
+        """
+        if self._chromium_wid:
+            sp.run(["xdotool", "windowfocus", "--sync", self._chromium_wid],
+                   capture_output=True)
+        if self.teclado.disponible:
+            self.teclado.tecla(tecla)
+        else:
+            # Sin --window → XTestFakeKeyEvent al foco actual (Chromium)
+            sp.run(["xdotool", "key", "--clearmodifiers", tecla],
+                   capture_output=True)
+
+    def _activar_chromium(self):
+        """Clic en el centro para que Netflix/HBO activen su navegación JS.
+        Sin este clic las flechas solo mueven el scrollbar del browser.
+        """
+        if not self.streaming_activo:
+            return
+        try:
+            rg = sp.run(["xdotool", "getdisplaygeometry"],
+                        capture_output=True, text=True)
+            w, h = map(int, rg.stdout.split())
+        except Exception:
+            w, h = 1920, 1080
+        if self._chromium_wid:
+            sp.run(["xdotool", "windowfocus", "--sync", self._chromium_wid],
+                   capture_output=True)
+        sp.run(["xdotool", "mousemove", str(w // 2), str(h // 2)],
+               capture_output=True)
+        sp.run(["xdotool", "click", "1"], capture_output=True)
+        sp.run(["xdotool", "mousemove", "0", "0"], capture_output=True)
+
+    def _mover_mouse(self, dx: int, dy: int):
+        """Mueve el cursor del mouse en la dirección indicada (dx/dy son signos: -1, 0 o 1).
+        Acelera automáticamente si el botón se mantiene presionado (_hold_count del IR).
+        """
+        hold   = getattr(self.ir, '_hold_count', 0)
+        factor = min(1 + hold // 3, 5)   # 1× → 2× → 3× → 4× → 5× (máx)
+        step   = MOUSE_STEP * factor
+        if self._chromium_wid:
+            sp.run(["xdotool", "windowfocus", "--sync", self._chromium_wid],
+                   capture_output=True)
+        sp.run(["xdotool", "mousemove_relative", "--",
+                str(dx * step), str(dy * step)], capture_output=True)
+
     def _mostrar_video_display(self):
         """Despliega el frame negro sobre toda la ventana para que VLC renderice."""
         self.video_display.place(relx=0, rely=0, relwidth=1, relheight=1)
@@ -392,6 +538,8 @@ class SmartTVApp:
     #  NAVEGACIÓN MULTI-ESTADO
     # ======================================
     def ir_subir(self):
+        if self.streaming_activo:
+            self._mover_mouse(0, -1); return
         if self.estado == "PRINCIPAL":
             self.idx = (self.idx - 1) % len(ITEMS)
             self._refrescar_sidebar(); self._refrescar_detalle()
@@ -399,14 +547,15 @@ class SmartTVApp:
             self.idx_video = (self.idx_video - 1) % len(self.videos_usb)
             self._refrescar_menu_videos()
         elif self.estado == "MUSICA":
-            self.idx_cancion = (
-            self.idx_cancion - 1) % len(self.canciones_usb)
+            self.idx_cancion = (self.idx_cancion - 1) % len(self.canciones_usb)
             self._refrescar_menu_musica()
         elif self.estado == "SERVICIOS":
             self.idx_servicio = (self.idx_servicio - 1) % len(self.servicios_items)
             self._refrescar_menu_servicios()
 
     def ir_bajar(self):
+        if self.streaming_activo:
+            self._mover_mouse(0, 1); return
         if self.estado == "PRINCIPAL":
             self.idx = (self.idx + 1) % len(ITEMS)
             self._refrescar_sidebar(); self._refrescar_detalle()
@@ -420,18 +569,54 @@ class SmartTVApp:
             self.idx_servicio = (self.idx_servicio + 1) % len(self.servicios_items)
             self._refrescar_menu_servicios()
 
+    def ir_izquierda(self):
+        if self.streaming_activo:
+            self._mover_mouse(-1, 0)
+
+    def ir_derecha(self):
+        if self.streaming_activo:
+            self._mover_mouse(1, 0)
+
+    def ir_sidebar_subir(self):
+        if self.streaming_activo:
+            self._tecla_chromium("Up")
+
+    def ir_sidebar_bajar(self):
+        if self.streaming_activo:
+            self._tecla_chromium("Down")
+
+    def ir_vol_subir(self):
+        sp.run(["amixer", "set", "PCM", "5%+"], capture_output=True)
+
+    def ir_vol_bajar(self):
+        sp.run(["amixer", "set", "PCM", "5%-"], capture_output=True)
+
+    def ir_mute(self):
+        sp.run(["amixer", "set", "PCM", "toggle"], capture_output=True)
+
     def ir_seleccionar(self):
+        if self.streaming_activo:
+            if self._chromium_wid:
+                sp.run(["xdotool", "windowfocus", "--sync", self._chromium_wid],
+                       capture_output=True)
+            sp.run(["xdotool", "click", "1"], capture_output=True)
+            return
         if self.estado == "PRINCIPAL":
             item = ITEMS[self.idx]
             if "Salir" in item["label"]:
-                self.cerrar_aplicacion()
+                self.ir_apagar_sistema()
             elif item["label"] == "Servicio Online":
                 self.abrir_menu_servicios()
             elif item["label"] == "Videos":
                 mp = self.usb_conectado or self._detectar_usb_actual()
                 if mp:
                     self.usb_conectado = mp
-                    self.analizar_y_reproducir_usb(mp)
+                    videos = obtener_videos(mp)
+                    if videos:
+                        self.mostrar_notificacion(f"{len(videos)} videos detectados. Abriendo menu...", "#cc6600")
+                        self.abrir_menu_videos(mp, videos)
+                    else:
+                        self.mostrar_notificacion("No se encontraron videos en el USB", "#cc3333")
                 else:
                     self.mostrar_notificacion("No hay USB conectado", "#cc3333")
             elif item["label"] == "Musica":
@@ -440,7 +625,7 @@ class SmartTVApp:
                     self.usb_conectado = mp
                     canciones = obtener_canciones(mp)
                     if canciones:
-                        self._abrir_menu_musica(mp, canciones)
+                        self._abrir_menu_musica(canciones)
                     else:
                         self.mostrar_notificacion("No se encontraron canciones en el USB", "#cc3333")
                 else:
@@ -451,6 +636,13 @@ class SmartTVApp:
                     self.usb_conectado = mp
                     imagenes = obtener_imagenes(mp)
                     if imagenes:
+                        # Liberar dispositivo ALSA antes de que VLC de imágenes lo pida
+                        if self.reproduciendo_musica:
+                            self.audio_player.detener()
+                            self.reproduciendo_musica = False
+                        if self.reproduciendo_video:
+                            self.video_player.detener()
+                            self.reproduciendo_video = False
                         self.mostrar_notificacion(f"{len(imagenes)} fotos detectadas. Iniciando presentacion...", "#0077cc")
                         self._mostrar_video_display()
                         self.reproduciendo_imagenes = True
@@ -463,6 +655,13 @@ class SmartTVApp:
                 self.mostrar_notificacion(f"Abriendo: {item['label']}", GREEN)
 
         elif self.estado == "VIDEOS":
+            # Liberar dispositivo ALSA antes de que VLC de video lo pida
+            if self.reproduciendo_musica:
+                self.audio_player.detener()
+                self.reproduciendo_musica = False
+            if self.reproduciendo_imagenes:
+                self.imagen_player.detener()
+                self.reproduciendo_imagenes = False
             if self.idx_video == 0:
                 self.mostrar_notificacion("Iniciando Presentacion de Videos...", GREEN)
                 self._mostrar_video_display()
@@ -477,6 +676,15 @@ class SmartTVApp:
                 self.video_player.reproducir_lista([ruta], loop=False)
 
         elif self.estado == "MUSICA":
+            # Liberar dispositivo ALSA antes de que VLC de audio lo pida
+            if self.reproduciendo_video:
+                self.video_player.detener()
+                self.reproduciendo_video = False
+                self._ocultar_video_display()
+            if self.reproduciendo_imagenes:
+                self.imagen_player.detener()
+                self.reproduciendo_imagenes = False
+                self._ocultar_video_display()
             if self.idx_cancion == 0:
                 self.reproduciendo_musica = True
                 self.audio_player.reproducir_lista(self.canciones_rutas, loop=True)
@@ -500,6 +708,13 @@ class SmartTVApp:
                     self.mostrar_notificacion("No hay USB conectado", "#cc3333")
             else:
                 ok, msg = self.gestor_online.abrir_streaming_video(item["key"])
+                if ok:
+                    self.streaming_activo = True
+                    # Empezar a buscar la ventana de Chromium desde ya (con reintentos)
+                    # _modo_streaming_inicio ocultará tkinter solo cuando la encuentre
+                    self.root.after(800, self._modo_streaming_inicio)
+                    # 6s: clic al centro para activar la navegación JS de Netflix
+                    self.root.after(6000, self._activar_chromium)
                 color = item["color"] if ok else "#cc3333"
                 self.mostrar_notificacion(msg, color)
 
@@ -523,9 +738,13 @@ class SmartTVApp:
             self.mostrar_notificacion("Musica detenida", "#228833")
             return  # nos quedamos en el menu de musica
 
-        # 2. Si Chromium está abierto, cerrarlo
-        if self.gestor_online.navegador_abierto():
+        # 2. Si Chromium está abierto, cerrarlo y restaurar la ventana
+        if self.gestor_online.navegador_abierto() or self.streaming_activo:
             self.gestor_online.cerrar_navegador()
+            self.streaming_activo = False
+            self._chromium_wid    = ""
+            self.root.deiconify()
+            self.root.lift()
             self.mostrar_notificacion("Servicio cerrado", "#228833")
             return
 
@@ -544,11 +763,61 @@ class SmartTVApp:
             self.frame_servicios.place_forget()
             self.mostrar_notificacion("Regresando al menu principal", "#228833")
 
+    def ir_reiniciar(self):
+        """Detiene todo y regresa al menú principal como si se acabara de iniciar."""
+        # 1. Detener reproductores activos
+        if self.reproduciendo_video:
+            self.video_player.detener()
+            self.reproduciendo_video = False
+        if self.reproduciendo_imagenes:
+            self.imagen_player.detener()
+            self.reproduciendo_imagenes = False
+        if self.reproduciendo_musica:
+            self.audio_player.detener()
+            self.reproduciendo_musica = False
+        self._ocultar_video_display()
+
+        # 2. Cerrar Chromium si está abierto
+        if self.gestor_online.navegador_abierto() or self.streaming_activo:
+            self.gestor_online.cerrar_navegador()
+        self.streaming_activo = False
+        self._chromium_wid    = ""
+
+        # 3. Restaurar ventana principal (si estaba oculta por Chromium)
+        self.root.deiconify()
+        self.root.lift()
+
+        # 4. Ocultar todos los sub-menús
+        for frame in (self.frame_videos, self.frame_musica, self.frame_servicios):
+            frame.place_forget()
+
+        # 5. Reiniciar variables de estado al valor inicial
+        self.estado          = "PRINCIPAL"
+        self.idx             = 0
+        self.idx_video       = 0
+        self.idx_cancion     = 0
+        self.idx_servicio    = 0
+        self.videos_usb      = []
+        self.videos_rutas    = []
+        self.canciones_usb   = []
+        self.canciones_rutas = []
+        self.ir._hold_count  = 0
+
+        # 6. Cancelar notificación pendiente y refrescar UI
+        if self._notif_job:
+            self.root.after_cancel(self._notif_job)
+            self._notif_job = None
+        self._notif.place_forget()
+        self._refrescar_sidebar()
+        self._refrescar_detalle()
+        self.mostrar_notificacion("Sistema reiniciado", GREEN)
+
     def ir_apagar_sistema(self):
         self.mostrar_notificacion("Apagando Raspberry Pi...", "#cc3333")
-        self.root.update(); time.sleep(2)
+        self.root.update()
+        time.sleep(2)
         self.cerrar_aplicacion()
-        # os.system("sudo shutdown -h now")
+        sp.run(["shutdown", "-h", "now"])  # sin sudo ya corre como root via xinit
 
     # ======================================
     #  NOTIFICACIÓN
@@ -670,13 +939,16 @@ class SmartTVApp:
         elif tipo == "mixed":
             self.mostrar_notificacion("USB mixto — elige que reproducir", "#cc8800")
         elif tipo == "video":
-            videos = obtener_videos(path)  # lista de rutas completas
-            self.mostrar_notificacion(f"{len(videos)} videos detectados. Abriendo menu...", "#cc6600")
-            self.abrir_menu_videos(path, videos)
+            videos = obtener_videos(path)
+            if videos:
+                self.mostrar_notificacion(f"{len(videos)} videos detectados. Abriendo menu...", "#cc6600")
+                self.abrir_menu_videos(path, videos)
+            else:
+                self.mostrar_notificacion("No se encontraron videos en el USB", "#cc3333")
         elif tipo == "audio":
             canciones = obtener_canciones(path)
             self.mostrar_notificacion(f"{len(canciones)} canciones detectadas. Abriendo menu...", "#7700cc")
-            self._abrir_menu_musica(path, canciones)
+            self._abrir_menu_musica(canciones)
         elif tipo == "image":
             imagenes = obtener_imagenes(path)
             self.mostrar_notificacion(f"{len(imagenes)} fotos detectadas. Iniciando presentacion...", "#0077cc")
@@ -690,6 +962,7 @@ class SmartTVApp:
         self.audio_player.detener()
         self.imagen_player.detener()
         self.gestor_online.cerrar_navegador()
+        self.teclado.cerrar()
         self.root.destroy()
         print("\nKiosko cerrado correctamente.\n")
 
