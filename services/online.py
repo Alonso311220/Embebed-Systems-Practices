@@ -35,7 +35,7 @@ log = logging.getLogger("services.online")
 
 SERVICIOS_VIDEO = {
     "netflix":  {"label": "Netflix",       "url": "https://www.netflix.com",         "char": "N", "color": "#e50914"},
-    "hbo":      {"label": "HBO Go",        "url": "https://www.hbogolatam.com",      "char": "H", "color": "#000000"},
+    "hbo":      {"label": "HBO Go",        "url": "https://www.hbomax.com/mx/es",      "char": "H", "color": "#000000"},
     "blim":     {"label": "Blim",          "url": "https://www.blim.com",            "char": "B", "color": "#ff6600"},
     "youtube":  {"label": "YouTube",       "url": "https://www.youtube.com/tv",      "char": "▶", "color": "#ff0000"},
     "disneyplus":{"label": "Disney+",      "url": "https://www.disneyplus.com",      "char": "D", "color": "#0063e5"},
@@ -135,7 +135,11 @@ class NavegadorKiosk:
             except subprocess.TimeoutExpired:
                 self._proc.kill()
             self._proc = None
-            log.info("Chromium cerrado")
+        # Matar cualquier proceso huérfano de Chromium que haya quedado corriendo
+        # (ocurre cuando dbus-run-session muere pero Chromium no)
+        subprocess.run(["pkill", "-9", "-f", "chromium-browser"],
+                       capture_output=True)
+        log.info("Chromium cerrado")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

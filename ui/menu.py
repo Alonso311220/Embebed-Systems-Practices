@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+#Author: Martínez Araujo Jesús Alonso
 # Le hace saber al sistema que este script debe ejecutarse con Python3
 import os, sys, time, threading # Módulos para el SO, parámetros y funciones del sistema, manejo de pausas, y tareas en segun plano 
 import tkinter as tk # Asignación de un alias para interfaz gráfica 
@@ -55,7 +56,7 @@ except ImportError as e:
     print(f"\033[31mError modulos media: {e}\033[0m"); sys.exit(1)
 
 try:
-    from services.online import GestorOnline, SERVICIOS_VIDEO # Servicios Online
+    from services.online import GestorOnline, SERVICIOS_VIDEO, SERVICIOS_MUSICA # Servicios Online
 except ImportError as e:
     print(f"\033[31mError modulos online: {e}\033[0m"); sys.exit(1)
 
@@ -79,7 +80,7 @@ WHITE   = "#ffffff"
 GRAY    = "#888888"
 LGRAY   = "#cccccc"
 
-MOUSE_STEP = 50   # píxeles que mueve el cursor por cada pulsación del control
+MOUSE_STEP = 25   # píxeles que mueve el cursor por cada pulsación del control
 
 # "icon": nombre de archivo en assets/icons/ (PNG cargado con PIL)
 # "char": caracter de respaldo si PIL no está disponible, y para el panel de detalle grande
@@ -551,6 +552,8 @@ class SmartTVApp:
             self._refrescar_menu_musica()
         elif self.estado == "SERVICIOS":
             self.idx_servicio = (self.idx_servicio - 1) % len(self.servicios_items)
+            if self.servicios_items[self.idx_servicio]["tipo"] == "separador":
+                self.idx_servicio = (self.idx_servicio - 1) % len(self.servicios_items)
             self._refrescar_menu_servicios()
 
     def ir_bajar(self):
@@ -567,6 +570,8 @@ class SmartTVApp:
             self._refrescar_menu_musica()
         elif self.estado == "SERVICIOS":
             self.idx_servicio = (self.idx_servicio + 1) % len(self.servicios_items)
+            if self.servicios_items[self.idx_servicio]["tipo"] == "separador":
+                self.idx_servicio = (self.idx_servicio + 1) % len(self.servicios_items)
             self._refrescar_menu_servicios()
 
     def ir_izquierda(self):
@@ -707,13 +712,13 @@ class SmartTVApp:
                 else:
                     self.mostrar_notificacion("No hay USB conectado", "#cc3333")
             else:
-                ok, msg = self.gestor_online.abrir_streaming_video(item["key"])
+                if item["tipo"] == "musica":
+                    ok, msg = self.gestor_online.abrir_streaming_musica(item["key"])
+                else:
+                    ok, msg = self.gestor_online.abrir_streaming_video(item["key"])
                 if ok:
                     self.streaming_activo = True
-                    # Empezar a buscar la ventana de Chromium desde ya (con reintentos)
-                    # _modo_streaming_inicio ocultará tkinter solo cuando la encuentre
                     self.root.after(800, self._modo_streaming_inicio)
-                    # 6s: clic al centro para activar la navegación JS de Netflix
                     self.root.after(6000, self._activar_chromium)
                 color = item["color"] if ok else "#cc3333"
                 self.mostrar_notificacion(msg, color)
@@ -839,17 +844,13 @@ class SmartTVApp:
     def abrir_menu_servicios(self):
         """Construye la lista de servicios y muestra el overlay."""
         self.estado = "SERVICIOS"
-        self.servicios_items = [
-            {"tipo": "servicio", "key": k, **v}
-            for k, v in SERVICIOS_VIDEO.items()
-        ]
-        self.servicios_items.append({
-            "tipo":  "usb",
-            "key":   "usb",
-            "label": "Reproducir desde USB",
-            "char":  "◉",
-            "color": GREEN,
-        })
+        self.servicios_items = (
+            [{"tipo": "video",  "key": k, **v} for k, v in SERVICIOS_VIDEO.items()] +
+            [{"tipo": "separador", "key": "", "label": "── Musica ──", "char": "", "color": BG}] +
+            [{"tipo": "musica", "key": k, **v} for k, v in SERVICIOS_MUSICA.items()] +
+            [{"tipo": "usb", "key": "usb", "label": "Reproducir desde USB",
+              "char": "◉", "color": GREEN}]
+        )
         self.idx_servicio = 0
         self._internet_ok  = False  # reset; se verifica en hilo para no bloquear UI
         self._refrescar_menu_servicios()
@@ -866,16 +867,22 @@ class SmartTVApp:
         for w in self.frame_servicios.winfo_children():
             w.destroy()
 
-        tk.Label(self.frame_servicios, text="PELICULAS — Elige tu servicio",
+        tk.Label(self.frame_servicios, text="SERVICIOS EN LINEA — Elige tu servicio",
                  font=("Helvetica", 18, "bold"), bg=BG, fg=GRAY).pack(pady=(30, 6))
 
         # Indicador de internet: usa cache (_internet_ok) para no bloquear navegación
         net_txt = "Internet: CONECTADO"   if self._internet_ok else "Internet: Verificando..."
         net_col = "#09e55d"               if self._internet_ok else GRAY
         tk.Label(self.frame_servicios, text=net_txt,
-                 font=("Helvetica", 10), bg=BG, fg=net_col).pack(pady=(0, 18))
+                 font=("Helvetica", 10), bg=BG, fg=net_col).pack(pady=(0, 12))
 
         for i, item in enumerate(self.servicios_items):
+            # Separador visual entre secciones (no es seleccionable)
+            if item["tipo"] == "separador":
+                tk.Label(self.frame_servicios, text="MUSICA",
+                         font=("Helvetica", 10, "bold"), bg=BG, fg=GRAY).pack(pady=(10, 2))
+                continue
+
             sel      = (i == self.idx_servicio)
             bg_color = item["color"] if sel else BG_SB
             fg_color = WHITE
