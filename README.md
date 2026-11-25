@@ -1,6 +1,8 @@
 Authors: 
 Cuevas González Dalia
+
 Martínez Araujo Jesús Alonso
+
 Pimentel Escobar Alondra Valeria
 # SmartTV Kiosk
 
